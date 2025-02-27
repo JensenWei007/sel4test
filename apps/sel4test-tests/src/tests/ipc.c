@@ -12,6 +12,15 @@
 
 #include "../helpers.h"
 
+#ifdef CONFIG_X86_64_UINTR
+unsigned int uintr_received;
+unsigned int uintr_test_fd;
+static void __attribute__((interrupt)) uintr_handler(struct __uintr_frame *ui_frame, unsigned long long vector)
+{
+    uintr_received = 1;
+}
+#endif
+
 #define MIN_LENGTH 0
 #define MAX_LENGTH (seL4_MsgMaxLength)
 
@@ -48,6 +57,38 @@ static int nbsend_func(seL4_Word endpoint, seL4_Word seed, seL4_Word reply, seL4
 
     return SUCCESS;
 }
+
+#ifdef CONFIG_X86_64_UINTR
+static int uintr_send(seL4_Word endpoint, seL4_Word seed, seL4_Word reply, seL4_Word extra)
+{
+    while (uintr_test_fd == -1) {};
+
+    int uipi_index = seL4_uintr_register_sender(uintr_test_fd, 0);
+
+    _senduipi(uipi_index);
+
+    seL4_uintr_unregister_sender(uipi_index, 0);
+    return SUCCESS;
+}
+
+static int uintr_recv(seL4_Word endpoint, seL4_Word seed, seL4_Word reply, seL4_Word extra)
+{
+    int fd = 0;
+    seL4_uintr_register_handler(uintr_handler, 0);
+
+    fd = seL4_uintr_vector_fd(0, 0);
+
+    /* Enable interrupts */
+	_stui();
+
+    uintr_test_fd = fd;
+
+    while (uintr_received == 0) {};
+
+    seL4_uintr_unregister_handler(0);
+    return SUCCESS;
+}
+#endif
 
 static int call_func(seL4_Word endpoint, seL4_Word seed, seL4_Word reply, seL4_Word extra)
 {
@@ -381,6 +422,17 @@ test_call_reply_and_wait(env_t env)
     return test_ipc_pair(env, call_func, reply_and_wait_func, false, env->cores);
 }
 DEFINE_TEST(IPC0003, "Test SMP seL4_Send + seL4_Reply + seL4_Recv", test_call_reply_and_wait, true)
+
+#ifdef CONFIG_X86_64_UINTR
+static int
+test_uintr_base(env_t env)
+{
+    uintr_received = 0;
+    uintr_test_fd = -1;
+    return test_ipc_pair(env, uintr_send, uintr_recv, false, env->cores);
+}
+DEFINE_TEST(UINTR0001, "Test uintr for basic send&recv", test_uintr_base, true)
+#endif
 
 static int
 test_nbsend_wait(env_t env)
