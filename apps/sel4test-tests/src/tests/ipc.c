@@ -13,6 +13,7 @@
 #include "../helpers.h"
 
 #ifdef CONFIG_X86_64_UINTR
+#include </usr/include/clang/14/include/x86gprintrin.h>
 unsigned int uintr_received;
 unsigned int uintr_test_fd;
 static void __attribute__((interrupt)) uintr_handler(struct __uintr_frame *ui_frame, unsigned long long vector)
