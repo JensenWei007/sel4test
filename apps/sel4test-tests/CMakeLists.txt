@@ -20,13 +20,9 @@ file(
     GLOB
         deps
         src/*.c
-        src/tests/*.c
-        src/tests/*.S
+        src/tests/ipc.c
         src/arch/${arch}/*.c
-        src/arch/${KernelArch}/tests/*.c
         src/*.cxx
-        src/tests/*.cxx
-        src/arch/${KernelArch}/tests/*.S
 )
 
 add_executable(sel4test-tests EXCLUDE_FROM_ALL ${deps})

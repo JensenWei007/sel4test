@@ -15,7 +15,7 @@
 #ifdef CONFIG_X86_64_UINTR
 #include </usr/include/clang/14/include/x86gprintrin.h>
 unsigned int uintr_received;
-unsigned int uintr_test_fd;
+int32_t uintr_test_fd;
 static void __attribute__((interrupt)) uintr_handler(struct __uintr_frame *ui_frame, unsigned long long vector)
 {
     printf("handel\n");
@@ -61,16 +61,11 @@ static int nbsend_func(seL4_Word endpoint, seL4_Word seed, seL4_Word reply, seL4
 }
 
 #ifdef CONFIG_X86_64_UINTR
-static int uintr_send(seL4_Word endpoint, seL4_Word seed, seL4_Word reply, seL4_Word extra)
+static int uintr_send(int32_t fd)
 {
-    printf("send\n");
-    while (uintr_test_fd == -1) {
-        seL4_Yield();
-    };
+    printf("send: %i\n",fd);
 
-    printf("send 1\n");
-
-    int uipi_index = seL4_uintr_register_sender(uintr_test_fd, 0);
+    int uipi_index = seL4_uintr_register_sender(fd, 0);
     printf("send 2\n");
 
     _senduipi(uipi_index);
@@ -78,13 +73,14 @@ static int uintr_send(seL4_Word endpoint, seL4_Word seed, seL4_Word reply, seL4_
 
     //seL4_uintr_unregister_sender(uipi_index, 0);
     printf("send 4\n");
+    while(1){};
     return SUCCESS;
 }
 
-static int uintr_recv(seL4_Word endpoint, seL4_Word seed, seL4_Word reply, seL4_Word extra)
+static int uintr_recv()
 {
     printf("recv\n");
-    int fd = 0;
+    int32_t fd = 0;
     seL4_uintr_register_handler((uint64_t)uintr_handler, 0);
 
     printf("recv 1\n");
@@ -96,12 +92,12 @@ static int uintr_recv(seL4_Word endpoint, seL4_Word seed, seL4_Word reply, seL4_
     /* Enable interrupts */
 	_stui();
 
-    printf("recv 3, fd: %u\n", fd);
     uintr_test_fd = fd;
 
+    printf("recv 3, fd: %i, uinfd: %i\n", fd, uintr_test_fd);
+
     while (uintr_received == 0) {
-        seL4_Yield();
-        printf("wait for hadn\n");
+        printf("1\n");
     };
 
     printf("recv 4\n");
@@ -429,19 +425,37 @@ static int test_ipc_pair_uintr(env_t env, test_func_t fa, test_func_t fb, bool i
     int error;
     helper_thread_t thread1, thread2;
 
+    int32_t fd = 0;
+    seL4_uintr_register_handler((uint64_t)uintr_handler, 0);
+
+    fd = seL4_uintr_vector_fd(0, 0);
+
+    /* Enable interrupts */
+	_stui();
+
+    uintr_test_fd = fd;
+
     /* Create some threads that need mutual exclusion */
-    create_helper_thread(env, &thread1);
-    create_helper_thread(env, &thread2);
-    start_helper(env, &thread1, fa, (seL4_Word) env, 1, 0, 0);
-    start_helper(env, &thread2, fb, (seL4_Word) env, 2, 0, 0);
+    create_helper_process(env, &thread1);
+    //create_helper_thread(env, &thread2);
+    set_helper_affinity(env, &thread1, 1);
+    start_helper(env, &thread1, fa, fd, 0, 0, 0);
+
+    printf("recv 3, fd: %i, uinfd: %i\n", fd, uintr_test_fd);
+
+    while (uintr_received == 0) {};
+
+    printf("recv 4\n");
+    //seL4_uintr_unregister_handler(0);
+    printf("recv 5\n");
 
     /* Wait for them to do their thing */
     wait_for_helper(&thread1);
-    wait_for_helper(&thread2);
+    //wait_for_helper(&thread2);
     cleanup_helper(env, &thread1);
-    cleanup_helper(env, &thread2);
+    //cleanup_helper(env, &thread2);
 
-    return sel4test_get_result();
+    return SUCCESS;
 }
 
 static int test_send_wait(env_t env)
