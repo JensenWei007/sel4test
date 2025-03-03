@@ -65,10 +65,11 @@ static int uintr_send(int32_t fd)
 {
     printf("send: %i\n",fd);
 
-    int uipi_index = seL4_uintr_register_sender(fd, 0);
-    printf("send 2\n");
+    uint64_t ret[5] = {0, 0, 0, 0, 0};
+    seL4_uintr_register_sender(fd, 0, ret);
+    printf("send 2, addr: %lx\n", ret[1]);
 
-    _senduipi(uipi_index);
+    _senduipi(ret[0]);
     printf("send 3\n");
 
     //seL4_uintr_unregister_sender(uipi_index, 0);
@@ -79,30 +80,6 @@ static int uintr_send(int32_t fd)
 
 static int uintr_recv()
 {
-    printf("recv\n");
-    int32_t fd = 0;
-    seL4_uintr_register_handler((uint64_t)uintr_handler, 0);
-
-    printf("recv 1\n");
-
-    fd = seL4_uintr_vector_fd(0, 0);
-
-    printf("recv 2\n");
-
-    /* Enable interrupts */
-	_stui();
-
-    uintr_test_fd = fd;
-
-    printf("recv 3, fd: %i, uinfd: %i\n", fd, uintr_test_fd);
-
-    while (uintr_received == 0) {
-        printf("1\n");
-    };
-
-    printf("recv 4\n");
-    //seL4_uintr_unregister_handler(0);
-    printf("recv 5\n");
     return SUCCESS;
 }
 #endif
@@ -426,7 +403,8 @@ static int test_ipc_pair_uintr(env_t env, test_func_t fa, test_func_t fb, bool i
     helper_thread_t thread1, thread2;
 
     int32_t fd = 0;
-    seL4_uintr_register_handler((uint64_t)uintr_handler, 0);
+    uint64_t ret[2] = {0, 0};
+    seL4_uintr_register_handler((uint64_t)uintr_handler, 0, ret);
 
     fd = seL4_uintr_vector_fd(0, 0);
 
