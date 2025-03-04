@@ -27,16 +27,14 @@ static void __attribute__((interrupt)) uintr_handler(struct __uintr_frame *ui_fr
     uintr_received = 1;
 }
 
-static int uintr_send(int32_t fd)
+static int uintr_send(int32_t fd, uint64_t vaddr)
 {
     printf("send: %i\n",fd);
 
-    uint64_t ret[5] = {0, 0, 0, 0, 0};
-    seL4_uintr_register_sender(fd, 0, ret);
+    int index = seL4_uintr_register_sender(fd, 0, vaddr);
     printf("send 2\n");
-    printf("send, addr : %lx  ,  %lx  ,  %lx  ,  %lx \n", ret[1], ret[2], ret[3], ret[4]);
 
-    _senduipi(ret[0]);
+    _senduipi(index);
     printf("send 3\n");
 
     //seL4_uintr_unregister_sender(uipi_index, 0);
@@ -48,12 +46,19 @@ static int uintr_send(int32_t fd)
 static int test_ipc_pair_uintr(env_t env, test_func_t fa, bool inter_as, seL4_Word nr_cores)
 {
     int error;
-    helper_thread_t thread1, thread2;
+    helper_thread_t thread1;
 
     int32_t fd = 0;
-    uint64_t ret[2] = {0, 0};
-    seL4_uintr_register_handler((uint64_t)uintr_handler, 0, ret);
-    printf("recv, addr : %lx  ,  %lx  \n", ret[0], ret[1]);
+    seL4_ARCH_Page_GetAddress_t r1 = seL4_X86_Page_GetAddress(env->tcb);
+    printf("wwwwwww r1 paddr: %lx\n", (unsigned long)r1.paddr);
+
+    seL4_CPtr frame = vka_alloc_frame_leaky(&env->vka, 12);
+    uintptr_t cookie = 0;
+
+    seL4_ARCH_Page_GetAddress_t rr = seL4_X86_Page_GetAddress(frame);
+
+
+    seL4_uintr_register_handler((uint64_t)uintr_handler, 0, r1.paddr);
 
     fd = seL4_uintr_vector_fd(0, 0);
 
@@ -64,9 +69,14 @@ static int test_ipc_pair_uintr(env_t env, test_func_t fa, bool inter_as, seL4_Wo
 
     /* Create some threads that need mutual exclusion */
     create_helper_process(env, &thread1);
-    //create_helper_thread(env, &thread2);
     set_helper_affinity(env, &thread1, 1);
-    start_helper(env, &thread1, fa, fd, 0, 0, 0);
+    seL4_ARCH_Page_GetAddress_t r2 = seL4_X86_Page_GetAddress(thread1.thread.tcb.cptr);
+    printf("wwwwwww r2 paddr: %lx\n", (unsigned long)r2.paddr);
+    void *vaddr;
+    reservation_t reserve = vspace_reserve_range_aligned(&thread1.process.vspace, 2 * BIT(12), 12, seL4_AllRights, 1, &vaddr);
+    int err = vspace_map_pages_at_vaddr(&thread1.process.vspace, &frame, &cookie, (void *)vaddr, 1, 12, reserve);
+    printf("============ frame pyh addr : %lx vaddr : %lx, err :%i\n", rr.paddr, (unsigned long)vaddr,err);
+    start_helper(env, &thread1, fa, fd, (unsigned long)vaddr, 0, 0);
 
     printf("recv 3, fd: %i, uinfd: %i\n", fd, uintr_test_fd);
 
@@ -78,9 +88,7 @@ static int test_ipc_pair_uintr(env_t env, test_func_t fa, bool inter_as, seL4_Wo
 
     /* Wait for them to do their thing */
     wait_for_helper(&thread1);
-    //wait_for_helper(&thread2);
     cleanup_helper(env, &thread1);
-    //cleanup_helper(env, &thread2);
 
     return SUCCESS;
 }
