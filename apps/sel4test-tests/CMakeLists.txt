@@ -14,13 +14,13 @@ if(KernelArchRiscV)
     set(arch arm)
 endif()
 
-set_source_files_properties(src/tests/ipc.c PROPERTIES COMPILE_FLAGS "-muintr -mgeneral-regs-only -minline-all-stringops")
+set_source_files_properties(src/tests/uintr.c PROPERTIES COMPILE_FLAGS "-muintr -mgeneral-regs-only -minline-all-stringops")
 
 file(
     GLOB
         deps
         src/*.c
-        src/tests/ipc.c
+        src/tests/uintr.c
         src/arch/${arch}/*.c
         src/*.cxx
 )
