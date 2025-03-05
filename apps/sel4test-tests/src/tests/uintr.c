@@ -27,11 +27,13 @@ static void __attribute__((interrupt)) uintr_handler(struct __uintr_frame *ui_fr
     uintr_received = 1;
 }
 
-static int uintr_send(int32_t fd, uint64_t vaddr)
+static int uintr_send(int32_t fd, uint64_t addr1, uint64_t addr2, uint64_t addr3)
 {
     printf("send: %i\n",fd);
 
-    int index = seL4_uintr_register_sender(fd, 0, vaddr);
+    uint64_t addr[3] = {addr1, addr2, addr3};
+    printf("send, addr : %lx\n",addr[3]);
+    int index = seL4_uintr_register_sender(fd, 0, addr);
     printf("send 2\n");
 
     _senduipi(index);
@@ -72,6 +74,7 @@ static int test_ipc_pair_uintr(env_t env, test_func_t fa, bool inter_as, seL4_Wo
     create_helper_process(env, &thread1);
     set_helper_affinity(env, &thread1, 1);
 
+    printf("map 111\n");
     // Create and map UITT
     seL4_CPtr frame_uitt = vka_alloc_frame_leaky(&env->vka, 12);
     seL4_ARCH_Page_GetAddress_t r2 = seL4_X86_Page_GetAddress(frame_uitt);
@@ -80,14 +83,16 @@ static int test_ipc_pair_uintr(env_t env, test_func_t fa, bool inter_as, seL4_Wo
     reservation_t reserve2 = vspace_reserve_range_aligned(&thread1.process.vspace, 2 * BIT(12), 12, seL4_AllRights, 1, &vaddr_uitt);
     int err2 = vspace_map_pages_at_vaddr(&thread1.process.vspace, &frame_uitt, &cookie2, (void *)vaddr_uitt, 1, 12, reserve2);
 
+    printf("map 222, p1 : %lx, v1: %lx, p2: %lx, v2: %lx\n", r1.paddr, (uint64_t)vaddr_upid, r2.paddr, (uint64_t)vaddr_uitt);
     // map UPID
+    // 只要下面的map上就行了
     void *vaddr_upid2;
     uintptr_t cookie3 = 0;
     reservation_t reserve3 = vspace_reserve_range_aligned(&thread1.process.vspace, 2 * BIT(12), 12, seL4_AllRights, 1, &vaddr_upid2);
     int err3 = vspace_map_pages_at_vaddr(&thread1.process.vspace, &frame_upid, &cookie3, (void *)vaddr_upid2, 1, 12, reserve3);
 
     //printf("============ frame pyh addr : %lx vaddr : %lx, err :%i\n", r1.paddr, (unsigned long)vaddr,err);
-    start_helper(env, &thread1, fa, fd, (unsigned long)vaddr, 0, 0);
+    start_helper(env, &thread1, fa, fd, (uint64_t)vaddr_upid, r2.paddr, (uint64_t)vaddr_uitt);
 
     printf("recv 3, fd: %i, uinfd: %i\n", fd, uintr_test_fd);
 
