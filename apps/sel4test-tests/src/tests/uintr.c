@@ -49,16 +49,17 @@ static int test_ipc_pair_uintr(env_t env, test_func_t fa, bool inter_as, seL4_Wo
     helper_thread_t thread1;
 
     int32_t fd = 0;
-    seL4_ARCH_Page_GetAddress_t r1 = seL4_X86_Page_GetAddress(env->tcb);
-    printf("wwwwwww r1 paddr: %lx\n", (unsigned long)r1.paddr);
 
-    seL4_CPtr frame = vka_alloc_frame_leaky(&env->vka, 12);
-    uintptr_t cookie = 0;
+    // Create and map UPID
+    seL4_CPtr frame_upid = vka_alloc_frame_leaky(&env->vka, 12);
+    seL4_ARCH_Page_GetAddress_t r1 = seL4_X86_Page_GetAddress(frame_upid);
+    void *vaddr_upid;
+    uintptr_t cookie1 = 0;
+    reservation_t reserve1 = vspace_reserve_range_aligned(&env->vspace, 2 * BIT(12), 12, seL4_AllRights, 1, &vaddr_upid);
+    int err1 = vspace_map_pages_at_vaddr(&env->vspace, &frame_upid, &cookie1, (void *)vaddr_upid, 1, 12, reserve1);
 
-    seL4_ARCH_Page_GetAddress_t rr = seL4_X86_Page_GetAddress(frame);
-
-
-    seL4_uintr_register_handler((uint64_t)uintr_handler, 0, r1.paddr);
+    uint64_t addr1[2] = {r1.paddr, (uint64_t)vaddr_upid};
+    seL4_uintr_register_handler((uint64_t)uintr_handler, 0, addr1);
 
     fd = seL4_uintr_vector_fd(0, 0);
 
@@ -70,12 +71,22 @@ static int test_ipc_pair_uintr(env_t env, test_func_t fa, bool inter_as, seL4_Wo
     /* Create some threads that need mutual exclusion */
     create_helper_process(env, &thread1);
     set_helper_affinity(env, &thread1, 1);
-    seL4_ARCH_Page_GetAddress_t r2 = seL4_X86_Page_GetAddress(thread1.thread.tcb.cptr);
-    printf("wwwwwww r2 paddr: %lx\n", (unsigned long)r2.paddr);
-    void *vaddr;
-    reservation_t reserve = vspace_reserve_range_aligned(&thread1.process.vspace, 2 * BIT(12), 12, seL4_AllRights, 1, &vaddr);
-    int err = vspace_map_pages_at_vaddr(&thread1.process.vspace, &frame, &cookie, (void *)vaddr, 1, 12, reserve);
-    printf("============ frame pyh addr : %lx vaddr : %lx, err :%i\n", rr.paddr, (unsigned long)vaddr,err);
+
+    // Create and map UITT
+    seL4_CPtr frame_uitt = vka_alloc_frame_leaky(&env->vka, 12);
+    seL4_ARCH_Page_GetAddress_t r2 = seL4_X86_Page_GetAddress(frame_uitt);
+    void *vaddr_uitt;
+    uintptr_t cookie2 = 0;
+    reservation_t reserve2 = vspace_reserve_range_aligned(&thread1.process.vspace, 2 * BIT(12), 12, seL4_AllRights, 1, &vaddr_uitt);
+    int err2 = vspace_map_pages_at_vaddr(&thread1.process.vspace, &frame_uitt, &cookie2, (void *)vaddr_uitt, 1, 12, reserve2);
+
+    // map UPID
+    void *vaddr_upid2;
+    uintptr_t cookie3 = 0;
+    reservation_t reserve3 = vspace_reserve_range_aligned(&thread1.process.vspace, 2 * BIT(12), 12, seL4_AllRights, 1, &vaddr_upid2);
+    int err3 = vspace_map_pages_at_vaddr(&thread1.process.vspace, &frame_upid, &cookie3, (void *)vaddr_upid2, 1, 12, reserve3);
+
+    //printf("============ frame pyh addr : %lx vaddr : %lx, err :%i\n", r1.paddr, (unsigned long)vaddr,err);
     start_helper(env, &thread1, fa, fd, (unsigned long)vaddr, 0, 0);
 
     printf("recv 3, fd: %i, uinfd: %i\n", fd, uintr_test_fd);
