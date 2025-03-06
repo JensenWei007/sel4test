@@ -23,25 +23,19 @@ int32_t uintr_test_fd;
 
 static void __attribute__((interrupt)) uintr_handler(struct __uintr_frame *ui_frame, unsigned long long vector)
 {
-    printf("=========== UINTR HANDLER ===========\n");
+    printf("========== UINTR HANDLER START ==========\n");
     uintr_received = 1;
-    printf("=========== UINTR HANDLER ===========\n");
+    printf("=========== UINTR HANDLER END ===========\n");
 }
 
 static int uintr_send(int32_t fd, uint64_t addr1, uint64_t addr2, uint64_t addr3)
 {
-    printf("send: %i\n",fd);
-
     uint64_t addr[3] = {addr1, addr2, addr3};
     int index = seL4_uintr_register_sender(fd, 0, addr);
-    printf("send 2\n");
 
     _senduipi(index);
-    printf("send 3\n");
 
-    //seL4_uintr_unregister_sender(uipi_index, 0);
-    printf("send 4\n");
-    while(1){};
+    seL4_uintr_unregister_sender(index, 0);
     return SUCCESS;
 }
 
@@ -94,13 +88,11 @@ static int test_ipc_pair_uintr(env_t env, test_func_t fa, bool inter_as, seL4_Wo
 
     while (uintr_received == 0) {};
 
-    printf("recv 4\n");
-    //seL4_uintr_unregister_handler(0);
-    printf("recv 5\n");
-
     /* Wait for them to do their thing */
     wait_for_helper(&thread1);
     cleanup_helper(env, &thread1);
+
+    seL4_uintr_unregister_handler(0);
 
     return SUCCESS;
 }
