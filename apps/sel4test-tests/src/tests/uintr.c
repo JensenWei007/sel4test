@@ -88,11 +88,13 @@ static int test_ipc_pair_uintr(env_t env, test_func_t fa, bool inter_as, seL4_Wo
 
     while (uintr_received == 0) {};
 
+    seL4_uintr_unregister_handler(0);
+
     /* Wait for them to do their thing */
     wait_for_helper(&thread1);
     cleanup_helper(env, &thread1);
 
-    seL4_uintr_unregister_handler(0);
+    //seL4_uintr_unregister_handler(0);
 
     return SUCCESS;
 }
