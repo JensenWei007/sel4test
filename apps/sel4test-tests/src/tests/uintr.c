@@ -139,7 +139,6 @@ static int test_ipc_pair_uintr(env_t env, test_func_t fa, bool inter_as, seL4_Wo
 
     /* Create some threads that need mutual exclusion */
     create_helper_process(env, &thread1);
-    //set_helper_affinity(env, &thread1, 1);
 
     // Create and map UITT
     seL4_CPtr frame_uitt = vka_alloc_frame_leaky(&env->vka, 12);
@@ -159,7 +158,7 @@ static int test_ipc_pair_uintr(env_t env, test_func_t fa, bool inter_as, seL4_Wo
     start_helper(env, &thread1, fa, fd, (uint64_t)vaddr_upid2, r2.paddr, (uint64_t)vaddr_uitt);
 
     while (uintr_received == 0) {
-        printf("=======3\n");
+        printf("/=======3\n");
         wait_for_helper(&thread1);
     };
 
