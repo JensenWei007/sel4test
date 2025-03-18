@@ -35,9 +35,10 @@ static int uintr_send(int32_t fd, uint64_t addr1, uint64_t addr2, uint64_t addr3
 
     printf("will send\n");
     _senduipi(index);
-    printf("will send\n");
+    
 
     seL4_uintr_unregister_sender(index, 0);
+    printf("will send end\n");
     return SUCCESS;
 }
 
@@ -140,17 +141,13 @@ static int test_ipc_pair_uintr(env_t env, test_func_t fa, bool inter_as, seL4_Wo
     create_helper_process(env, &thread1);
     //set_helper_affinity(env, &thread1, 1);
 
-    printf("=======1\n");
     // Create and map UITT
     seL4_CPtr frame_uitt = vka_alloc_frame_leaky(&env->vka, 12);
     seL4_ARCH_Page_GetAddress_t r2 = seL4_X86_Page_GetAddress(frame_uitt);
-    printf("=======11\n");
     void *vaddr_uitt;
     uintptr_t cookie2 = 0;
     reservation_t reserve2 = vspace_reserve_range_aligned(&thread1.process.vspace, 2 * BIT(12), 12, seL4_AllRights, 1, &vaddr_uitt);
-    printf("=======12\n");
     int err2 = vspace_map_pages_at_vaddr(&thread1.process.vspace, &frame_uitt, &cookie2, (void *)vaddr_uitt, 1, 12, reserve2);
-    printf("=======2\n");
     // map UPID
     seL4_CPtr frame_upid_2 = get_free_slot(env);
     cnode_copy(env, frame_upid, frame_upid_2, seL4_AllRights);
@@ -159,7 +156,6 @@ static int test_ipc_pair_uintr(env_t env, test_func_t fa, bool inter_as, seL4_Wo
     reservation_t reserve3 = vspace_reserve_range_aligned(&thread1.process.vspace, 2 * BIT(12), 12, seL4_AllRights, 1, &vaddr_upid2);
     int err3 = vspace_map_pages_at_vaddr(&thread1.process.vspace, &frame_upid_2, &cookie3, (void *)vaddr_upid2, 1, 12, reserve3);
 
-    printf("will start\n");
     start_helper(env, &thread1, fa, fd, (uint64_t)vaddr_upid2, r2.paddr, (uint64_t)vaddr_uitt);
 
     while (uintr_received == 0) {
