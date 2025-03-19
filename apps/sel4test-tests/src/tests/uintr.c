@@ -36,6 +36,7 @@ static int uintr_send(int32_t fd, uint64_t addr1, uint64_t addr2, uint64_t addr3
     printf("will send\n");
     _senduipi(index);
     
+    seL4_Yield();
 
     seL4_uintr_unregister_sender(index, 0);
     printf("will send end\n");
@@ -157,10 +158,12 @@ static int test_ipc_pair_uintr(env_t env, test_func_t fa, bool inter_as, seL4_Wo
 
     start_helper(env, &thread1, fa, fd, (uint64_t)vaddr_upid2, r2.paddr, (uint64_t)vaddr_uitt);
 
-    while (uintr_received == 0) {
-        printf("/=======3\n");
-        wait_for_helper(&thread1);
-    };
+    set_helper_priority(env, &thread1, 6);
+    seL4_TCB_SetPriority(env->tcb, env->tcb, 6);
+    seL4_Yield();
+    //wait_for_helper(&thread1);;
+
+    while (uintr_received == 0) {};
 
     seL4_uintr_unregister_handler(0);
 
