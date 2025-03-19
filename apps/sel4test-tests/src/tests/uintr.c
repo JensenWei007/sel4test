@@ -36,7 +36,7 @@ static int uintr_send(int32_t fd, uint64_t addr1, uint64_t addr2, uint64_t addr3
     printf("will send\n");
     _senduipi(index);
     
-    seL4_Yield();
+    //seL4_Yield();
 
     seL4_uintr_unregister_sender(index, 0);
     printf("will send end\n");
@@ -158,12 +158,55 @@ static int test_ipc_pair_uintr(env_t env, test_func_t fa, bool inter_as, seL4_Wo
 
     start_helper(env, &thread1, fa, fd, (uint64_t)vaddr_upid2, r2.paddr, (uint64_t)vaddr_uitt);
 
-    set_helper_priority(env, &thread1, 6);
-    seL4_TCB_SetPriority(env->tcb, env->tcb, 6);
-    seL4_Yield();
-    //wait_for_helper(&thread1);;
+    printf("will call\n");
+    seL4_MessageInfo_t info;
+    seL4_Word badge;
+    seL4_Word sys = seL4_SysRecv;
+    seL4_Word src = thread1.local_endpoint.cptr;
 
-    while (uintr_received == 0) {};
+    register seL4_Word mr0 asm("r10");
+    register seL4_Word mr1 asm("r8");
+    register seL4_Word mr2 asm("r9");
+    register seL4_Word mr3 asm("r15");
+    MCS_REPLY_DECL;
+
+    uint64_t rrr = 0;
+		asm volatile(
+			"movq %%rsp, %0"      // 将rsp寄存器的值移动到变量中
+        	: "=r" (rrr)    // 输出操作数约束
+		);
+    printf("RSP: %lx\n", (unsigned long)rrr);
+
+    
+    asm volatile(
+        "movq   %%rsp, %%rbx    \n"
+        "syscall                \n"
+        "movq   %%rbx, %%rsp    \n"
+        : "=D"(badge),
+        "=S"(info.words[0]),
+        "=r"(mr0),
+        "=r"(mr1),
+        "=r"(mr2),
+        "=r"(mr3)
+        : "d"(sys),
+        "D"(src)
+        MCS_REPLY
+        : "%rcx", "%rbx", "r11", "memory"
+    );
+    printf("==RSP,rrr : %lx\n", (unsigned long)rrr);
+
+    uint64_t rrrr = 0;
+    asm volatile(
+        "movq %%rsp, %0"      // 将rsp寄存器的值移动到变量中
+        : "=r" (rrrr)    // 输出操作数约束
+    );
+    printf("RSP: %lx\n", (unsigned long)rrrr);
+    printf("\n");
+
+
+    while (uintr_received == 0) {
+        printf("111\n");
+    };
 
     seL4_uintr_unregister_handler(0);
 
