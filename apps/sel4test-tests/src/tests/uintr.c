@@ -154,32 +154,7 @@ static int test_ipc_pair_uintr(env_t env, test_func_t fa, bool inter_as, seL4_Wo
 
     start_helper(env, &thread1, fa, fd, (uint64_t)vaddr_upid2, r2.paddr, (uint64_t)vaddr_uitt);
 
-    seL4_MessageInfo_t info;
-    seL4_Word badge;
-    seL4_Word sys = seL4_SysRecv;
-    seL4_Word src = thread1.local_endpoint.cptr;
-
-    register seL4_Word mr0 asm("r10");
-    register seL4_Word mr1 asm("r8");
-    register seL4_Word mr2 asm("r9");
-    register seL4_Word mr3 asm("r15");
-    MCS_REPLY_DECL;
-    
-    asm volatile(
-        "movq   %%rsp, %%rbx    \n"
-        "syscall                \n"
-        "movq   %%rbx, %%rsp    \n"
-        : "=D"(badge),
-        "=S"(info.words[0]),
-        "=r"(mr0),
-        "=r"(mr1),
-        "=r"(mr2),
-        "=r"(mr3)
-        : "d"(sys),
-        "D"(src)
-        MCS_REPLY
-        : "%rcx", "%rbx", "r11", "memory"
-    );
+    wait_for_helper(&thread1);
 
     while (uintr_received == 0) {};
 
