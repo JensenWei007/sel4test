@@ -94,7 +94,8 @@ static int test_ipc_pair_uintr_smp(env_t env, test_func_t fa, bool inter_as, seL
     wait_for_helper(&thread1);
     cleanup_helper(env, &thread1);
 
-    //seL4_uintr_unregister_handler(0);
+    /* Disable interrupts */
+    _clui();
 
     return SUCCESS;
 }
@@ -162,6 +163,9 @@ static int test_ipc_pair_uintr(env_t env, test_func_t fa, bool inter_as, seL4_Wo
 
     /* Wait for them to do their thing */
     cleanup_helper(env, &thread1);
+
+    /* Disable interrupts */
+    _clui();
 
     return SUCCESS;
 }
