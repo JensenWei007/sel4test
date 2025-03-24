@@ -22,7 +22,8 @@ file(
         deps
         src/*.c
         #src/tests/uintr.c
-        src/tests/pingpong.c
+        #src/tests/pingpong.c
+        src/tests/e1000net.c
         src/arch/${arch}/*.c
         src/*.cxx
 )
@@ -44,6 +45,7 @@ target_link_libraries(
     PUBLIC
         sel4_autoconf
         muslc
+        pci
         sel4
         sel4runtime
         sel4allocman
