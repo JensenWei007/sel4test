@@ -17,12 +17,13 @@
 static int
 test_e1000(env_t env)
 {
-    int error = sel4platsupport_new_io_ops(&env->vspace, &env->vka, &env->simple, &env->ops);
-    printf("create new io, error: %i\n", error);
-    error = sel4platsupport_new_arch_ops(&env->ops, &env->simple, &env->vka);
-    printf("create new io ops, error: %i\n", error);
-    printf("=========111111, : %i\n", (int)env->ops.io_port_ops.io_port_out_fn);
-    libpci_scan(env->ops.io_port_ops);
+    // First we scan pci to get device
+    int error = sel4platsupport_new_io_ops(&env->vspace, &env->vka, &env->simple, &env->pci_inops);
+    error = sel4platsupport_new_arch_ops(&env->pci_inops, &env->simple, &env->vka);
+    error = sel4platsupport_new_io_ops(&env->vspace, &env->vka, &env->simple, &env->pci_outops);
+    error = sel4platsupport_new_arch_ops(&env->pci_outops, &env->simple, &env->vka);
+    libpci_scan(env->pci_inops.io_port_ops, env->pci_outops.io_port_ops);
+    // Then we will get 82574, vendor id = 8086, device id = 10d3
     return SUCCESS;
 }
 DEFINE_TEST(E1000NET0001, "Test e1000", test_e1000, true)

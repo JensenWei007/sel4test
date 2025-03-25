@@ -19,20 +19,17 @@ static sel4rpc_client_t *rpc_client;
 static seL4_Error get_IOPort_cap(void *data, uint16_t start_port, uint16_t end_port, seL4_Word root, seL4_Word dest,
                                  seL4_Word depth)
 {
-    printf("=====wwfffw\n");
     test_init_data_t *init = (test_init_data_t *)data;
 
     if ((start_port < SERIAL_CONSOLE_COM1_PORT ||
          start_port > SERIAL_CONSOLE_COM1_PORT_END) &&
         (start_port < PCI_CONF_PORT_ADDR || start_port > PCI_CONF_PORT_ADDR_END))
     {
-        printf("=====wwfff111111w\n");
         return seL4_RangeError;
     }
     if (start_port >= SERIAL_CONSOLE_COM1_PORT &&
         start_port <= SERIAL_CONSOLE_COM1_PORT_END)
     {
-        printf("=====wwfff111111w ser\n");
         RpcMessage rpcMsg = {
             .which_msg = RpcMessage_ioport_tag,
             .msg.ioport = {
@@ -43,31 +40,26 @@ static seL4_Error get_IOPort_cap(void *data, uint16_t start_port, uint16_t end_p
         int ret = sel4rpc_call(rpc_client, &rpcMsg, root, dest, depth);
         if (ret < 0)
         {
-            printf("=====wwfffw222222\n");
             return seL4_InvalidArgument;
         }
 
-        printf("=====wwfffw3333\n");
         return rpcMsg.msg.ret.errorCode;
     }
     else
     {
-        printf("=====wwfff111111w pci, start: %i, end: %i\n", (int)start_port, (int)end_port);
         RpcMessage rpcMsg = {
             .which_msg = RpcMessage_ioport_tag,
             .msg.ioport = {
-                .start = PCI_CONF_PORT_ADDR,
-                .end = PCI_CONF_PORT_ADDR_END,
+                .start = start_port,
+                .end = end_port,
             },
         };
         int ret = sel4rpc_call(rpc_client, &rpcMsg, root, dest, depth);
         if (ret < 0)
         {
-            printf("=====wwfffw222222\n");
             return seL4_InvalidArgument;
         }
 
-        printf("=====wwfffw3333\n");
         return rpcMsg.msg.ret.errorCode;
     }
 }
