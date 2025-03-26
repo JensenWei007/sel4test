@@ -71,6 +71,7 @@ target_link_libraries(
     PUBLIC
         sel4_autoconf
         pci
+        ethdrivers
         muslc
         sel4
         sel4runtime

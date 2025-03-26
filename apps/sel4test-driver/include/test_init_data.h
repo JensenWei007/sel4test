@@ -95,6 +95,14 @@ typedef struct {
     /* number of available cores */
     seL4_Word cores;
 
+    /* caps for the net mmio */
+    seL4_CPtr net_cap[32];
+
+    /* io_ops for the net */
+    ps_io_ops_t net_ops;
+
+    struct eth_driver *eth_driver;
+
 } test_init_data_t;
 
 compile_time_assert(init_data_fits_in_ipc_buffer, sizeof(test_init_data_t) < PAGE_SIZE_4K);

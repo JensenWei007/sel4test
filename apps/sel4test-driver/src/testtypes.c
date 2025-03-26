@@ -257,6 +257,15 @@ void basic_set_up(uintptr_t e)
     } else {
         env->init->free_slots.start = env->endpoint + 1;
     }
+
+    for (int i = 0; i < 32; i++)
+    {
+        seL4_CPtr cap = env->init->net_cap[i];
+        env->init->net_cap[i] = sel4utils_copy_cap_to_process(&(env->test_process), &env->vka, cap);
+        //printf("before : %i, after: %i\n", (int)cap, (int)env->init->net_cap[i]);
+    }
+    env->init->free_slots.start = env->init->net_cap[31] + 1;
+
     env->init->free_slots.end = (1u << TEST_PROCESS_CSPACE_SIZE_BITS);
     assert(env->init->free_slots.start < env->init->free_slots.end);
 }
