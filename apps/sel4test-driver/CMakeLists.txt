@@ -70,6 +70,7 @@ target_link_libraries(
     sel4test-driver
     PUBLIC
         sel4_autoconf
+        pci
         muslc
         sel4
         sel4runtime

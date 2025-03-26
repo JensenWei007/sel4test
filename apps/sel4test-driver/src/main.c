@@ -42,6 +42,8 @@
 #include <vka/object.h>
 #include <vka/capops.h>
 
+#include <pci/pci.h>
+
 #include <vspace/vspace.h>
 #include "test.h"
 #include "timer.h"
@@ -420,6 +422,34 @@ void *main_continued(void *arg UNUSED)
     printf("\n");
 
     int error;
+
+    ps_io_ops_t pci_inops;
+    ps_io_ops_t pci_outops;
+    int errore = sel4platsupport_new_io_ops(&env.vspace, &env.vka, &env.simple, &pci_inops);
+    errore = sel4platsupport_new_arch_ops(&pci_inops, &env.simple, &env.vka);
+    errore = sel4platsupport_new_io_ops(&env.vspace, &env.vka, &env.simple, &pci_outops);
+    errore = sel4platsupport_new_arch_ops(&pci_outops, &env.simple, &env.vka);
+    libpci_scan(pci_inops.io_port_ops, pci_outops.io_port_ops);
+
+    // libpci_device_iocfg_debug_print(&libpci_find_device(0x8086, 0x10d3)->cfg, true);
+
+    // Check the device
+    libpci_device_t* net = libpci_find_device(0x8086, 0x10d3);
+    if (!net)
+        printf("failed to find device\n");
+    
+    // Map device
+    uint64_t paddr = libpci_device_iocfg_get_baseaddr(&net->cfg, 0);
+    uint64_t size = net->cfg.base_addr_size[0];
+    uint64_t page_num = size / 4096;
+    seL4_CPtr frames[page_num];
+    for (int i = 0; i < page_num; i++)
+    {
+        vka_object_t frame;
+        int er = vka_alloc_frame_at(&env.vka, seL4_PageBits, paddr + i * 4096, &frame);
+        frames[i] = frame.cptr;
+    }
+    
 
     /* allocate a piece of device untyped memory for the frame tests,
      * note that spike doesn't have any device untypes so the tests that require device untypes are turned off */

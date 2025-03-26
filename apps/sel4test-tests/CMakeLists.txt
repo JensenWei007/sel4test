@@ -45,7 +45,6 @@ target_link_libraries(
     PUBLIC
         sel4_autoconf
         muslc
-        pci
         sel4
         sel4runtime
         sel4allocman
