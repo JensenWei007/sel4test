@@ -515,11 +515,11 @@ void *main_continued(void *arg UNUSED)
     uintptr_t cookie = 0;
     reservation_t reserve = vspace_reserve_range_aligned(&env.vspace, 32 * BIT(12), 12, seL4_AllRights, 1, &vaddr_net);
     int errpr = vspace_map_pages_at_vaddr(&env.vspace, frames, &cookie, (void *)vaddr_net, 32, 12, reserve);
-    printf("map, er: %i, vaddr: %lx\n", errpr, (unsigned long)vaddr_net);
+    //printf("map, er: %i, vaddr: %lx\n", errpr, (unsigned long)vaddr_net);
 
     env.init->eth_driver = malloc(sizeof(struct eth_driver));
     memset(env.init->eth_driver, 0, sizeof(struct eth_driver));
-    printf("============1, size: %i\n", (int)sizeof(struct eth_driver));
+    //printf("============1, size: %i\n", (int)sizeof(struct eth_driver));
     ethif_intel_config_t *eth_config = calloc(1, sizeof(ethif_intel_config_t) + sizeof(ps_irq_t));
     *eth_config = (ethif_intel_config_t) {
         .bar0 = vaddr_net,
@@ -527,12 +527,8 @@ void *main_continued(void *arg UNUSED)
         .num_irqs = 0
     };
     e2 = ethif_e82574_init(env.init->eth_driver, env.init->net_ops, eth_config);
-    printf("============1, err: %i\n", e2);
-    printf("============2, addr: %lx\n", (unsigned long)env.init->eth_driver);
-
-    uint8_t mac = 0;
-    env.init->eth_driver->i_fn.get_mac(env.init->eth_driver, &mac);
-    printf("============3, mac: %i\n", mac);
+    //printf("============1, err: %i\n", e2);
+    //printf("============2, addr: %lx\n", (unsigned long)env.init->eth_driver);
 
     /* Allocate a reply object for the RT kernel. */
     if (config_set(CONFIG_KERNEL_MCS)) {
@@ -542,6 +538,11 @@ void *main_continued(void *arg UNUSED)
 
     /* now run the tests */
     sel4test_run_tests(&env);
+
+    uint8_t mac[6] = {0, 0, 0, 0, 0, 0};
+    env.init->eth_driver->i_fn.get_mac(env.init->eth_driver, mac);
+    printf("============3, mac: %i\n", mac[0]);
+
 
     return NULL;
 }

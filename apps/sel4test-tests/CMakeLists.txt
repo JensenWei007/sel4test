@@ -23,7 +23,7 @@ file(
         src/*.c
         #src/tests/uintr.c
         #src/tests/pingpong.c
-        src/tests/e1000net.c
+        src/tests/iouring.c
         src/arch/${arch}/*.c
         src/*.cxx
 )

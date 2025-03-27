@@ -72,6 +72,8 @@ target_link_libraries(
         sel4_autoconf
         pci
         ethdrivers
+        sel4nanopb
+        nanopb
         muslc
         sel4
         sel4runtime

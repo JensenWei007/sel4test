@@ -14,6 +14,10 @@
 #include "test.h"
 #include "timer.h"
 #include <sel4rpc/server.h>
+#include <sel4nanopb/sel4nanopb.h>
+#include <rpc.pb.h>
+#include <pb_encode.h>
+#include <pb_decode.h>
 #include <sel4testsupport/testreporter.h>
 
 /* Bootstrap test type. */
@@ -162,7 +166,12 @@ static int sel4test_driver_wait(driver_env_t env, struct testcase *test)
                         "supported HW timer.");
             }
         } else if (test_output == SEL4TEST_PROTOBUF_RPC) {
-            sel4rpc_server_recv(&rpc_server);
+            RpcMessage rpcMsg;
+            pb_istream_t stream = pb_istream_from_IPC(1);
+            bool ret = pb_decode_delimited(&stream, &RpcMessage_msg, &rpcMsg);
+            if (rpcMsg.which_msg != RpcMessage_net_tag)
+                sel4rpc_server_recv(&rpc_server);
+            sel4rpc_net_reply(&rpc_server, 0, 9, 99);
             continue;
         }
 
