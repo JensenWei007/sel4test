@@ -18,6 +18,8 @@
 #include <rpc.pb.h>
 #include <pb_encode.h>
 #include <pb_decode.h>
+#include <ethdrivers/raw.h>
+#include <ethdrivers/intel.h>
 #include <sel4testsupport/testreporter.h>
 
 /* Bootstrap test type. */
@@ -171,7 +173,29 @@ static int sel4test_driver_wait(driver_env_t env, struct testcase *test)
             bool ret = pb_decode_delimited(&stream, &RpcMessage_msg, &rpcMsg);
             if (rpcMsg.which_msg != RpcMessage_net_tag)
                 sel4rpc_server_recv(&rpc_server);
-            sel4rpc_net_reply(&rpc_server, 0, 9, 99);
+            uint8_t mac[6] = {0, 0, 0, 0, 0, 0};
+            env->init->eth_driver->i_fn.get_mac(env->init->eth_driver, mac);
+            printf("============3, mac: %i\n", mac[0]);
+            //env->init->net_ops.dma_manager.dma_alloc_fn()
+            uint8_t* send = (uint8_t*)ps_dma_alloc(&env->init->net_ops.dma_manager, 4096, 4096, 1, PS_MEM_NORMAL);
+            uintptr_t phys = ps_dma_pin(&env->init->net_ops.dma_manager, send, 4096);
+            unsigned int si = 4096;
+            int coo = 2002;
+            memset(send, 0, 4096);
+            for (int i=0;i<6;i++)
+                send[i] = mac[i]+1;
+            for (int i=0;i<6;i++)
+                send[i+6] = mac[i];
+            send[13] = 0x8;
+            if (rpcMsg.msg.net.op == 0)
+                env->init->eth_driver->i_fn.raw_tx(env->init->eth_driver, 1, &phys, &si, (void *)(&coo));
+            if (rpcMsg.msg.net.op == 1)
+            {
+                while(1){
+                    env->init->eth_driver->i_fn.raw_poll(env->init->eth_driver);
+                }
+            }
+            sel4rpc_net_reply(&rpc_server, 0, 9, 11);
             continue;
         }
 

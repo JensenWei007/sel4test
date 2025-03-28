@@ -86,6 +86,8 @@ struct driver_env {
 
     /* time server for managing timeouts */
     time_manager_t tm;
+
+    int is_net_down;
 };
 typedef struct driver_env *driver_env_t;
 

@@ -81,6 +81,18 @@ extern char _cpio_archive_end[];
 
 static elf_t tests_elf;
 
+static void txc(void *cb_cookie, void *cookie)
+{
+    int* e = (int*)cookie;
+    printf("cookie is down, %i\n", *e);
+}
+
+static struct raw_iface_callbacks icb_fns = {
+    .tx_complete = txc,
+    .rx_complete = NULL,
+    .allocate_rx_buf = NULL
+};
+
 /* initialise our runtime environment */
 static void init_env(driver_env_t env)
 {
@@ -529,6 +541,7 @@ void *main_continued(void *arg UNUSED)
     e2 = ethif_e82574_init(env.init->eth_driver, env.init->net_ops, eth_config);
     //printf("============1, err: %i\n", e2);
     //printf("============2, addr: %lx\n", (unsigned long)env.init->eth_driver);
+    env.init->eth_driver->i_cb = icb_fns;
 
     /* Allocate a reply object for the RT kernel. */
     if (config_set(CONFIG_KERNEL_MCS)) {
@@ -538,11 +551,6 @@ void *main_continued(void *arg UNUSED)
 
     /* now run the tests */
     sel4test_run_tests(&env);
-
-    uint8_t mac[6] = {0, 0, 0, 0, 0, 0};
-    env.init->eth_driver->i_fn.get_mac(env.init->eth_driver, mac);
-    printf("============3, mac: %i\n", mac[0]);
-
 
     return NULL;
 }

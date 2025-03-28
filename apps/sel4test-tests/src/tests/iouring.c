@@ -20,7 +20,6 @@ test_iouring(env_t env)
     cspacepath_t path;
     int error;
     error = vka_cspace_alloc_path(&env->vka, &path);
-    printf("========1, error: %i\n", (int)error);
     RpcMessage rpcMsg = {
         .which_msg = RpcMessage_net_tag,
         .msg.net = {
@@ -31,7 +30,18 @@ test_iouring(env_t env)
         },
     };
     int ret = sel4rpc_call(&env->rpc_client, &rpcMsg, path.root, path.capPtr, path.capDepth);
-    printf("coo: %i, result: %i\n", (int)rpcMsg.msg.net.cookie, (int)rpcMsg.msg.net.result);
+    printf("first coo: %i, result: %i\n", (int)rpcMsg.msg.net.cookie, (int)rpcMsg.msg.net.result);
+
+    RpcMessage rpcMsg1 = {
+        .which_msg = RpcMessage_net_tag,
+        .msg.net = {
+            .op = 1,
+            .result = 1,
+            .group = 99,
+            .cookie = 1,
+        },
+    };
+    ret = sel4rpc_call(&env->rpc_client, &rpcMsg1, path.root, path.capPtr, path.capDepth);
     return SUCCESS;
 }
 DEFINE_TEST(IOURING0001, "Test basic io uring", test_iouring, true)
