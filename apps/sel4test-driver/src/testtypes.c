@@ -22,6 +22,30 @@
 #include <ethdrivers/intel.h>
 #include <sel4testsupport/testreporter.h>
 
+uint8_t arp_packet[4096] = {
+    // 以太网帧头部
+    0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,  // 目标 MAC（广播）
+    0x02, 0x00, 0x00, 0x00, 0x00, 0x01,  // 源 MAC (02:00:00:00:00:01)
+    0x08, 0x06,                          // 以太网类型: ARP (0x0806)
+
+    // ARP 头部
+    0x00, 0x01,                          // 硬件类型: 以太网 (0x0001)
+    0x08, 0x00,                          // 协议类型: IPv4 (0x0800)
+    0x06,                                // 硬件地址长度: 6
+    0x04,                                // 协议地址长度: 4
+    0x00, 0x01,                          // 操作码: 请求 (0x0001)
+
+    // 发送方地址
+    0x02, 0x00, 0x00, 0x00, 0x00, 0x01,  // 发送方 MAC (02:00:00:00:00:01)
+    0xC0, 0xA8, 0x01, 0x64,              // 发送方 IP (192.168.1.100)
+
+    // 目标地址
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00,  // 目标 MAC (未知)
+    0xC0, 0xA8, 0x01, 0x01,              // 目标 IP (192.168.1.1)
+
+    // 填充 4054 字节 (保证总长度为 4096)
+};
+
 /* Bootstrap test type. */
 static inline void bootstrap_set_up_test_type(uintptr_t e)
 {
@@ -175,20 +199,23 @@ static int sel4test_driver_wait(driver_env_t env, struct testcase *test)
                 sel4rpc_server_recv(&rpc_server);
             uint8_t mac[6] = {0, 0, 0, 0, 0, 0};
             env->init->eth_driver->i_fn.get_mac(env->init->eth_driver, mac);
-            printf("============3, mac: %i\n", mac[0]);
+            for (int i=0;i<6;i++)
+                printf("============3, mac: %0x\n", (int)mac[i]);
+            memset(arp_packet + 42, 0, 4054);
             //env->init->net_ops.dma_manager.dma_alloc_fn()
-            uint8_t* send = (uint8_t*)ps_dma_alloc(&env->init->net_ops.dma_manager, 4096, 4096, 1, PS_MEM_NORMAL);
-            uintptr_t phys = ps_dma_pin(&env->init->net_ops.dma_manager, send, 4096);
-            unsigned int si = 4096;
+            uintptr_t phys[2] = {0, 0};
+            uint8_t* send1 = (uint8_t*)ps_dma_alloc(&env->init->net_ops.dma_manager, 4096, 4096, 1, PS_MEM_NORMAL);
+            phys[0] = ps_dma_pin(&env->init->net_ops.dma_manager, send1, 4096);
+            uint8_t* send2 = (uint8_t*)ps_dma_alloc(&env->init->net_ops.dma_manager, 4096, 4096, 1, PS_MEM_NORMAL);
+            phys[1] = ps_dma_pin(&env->init->net_ops.dma_manager, send2, 4096);
+            unsigned int si[2] = {4096, 4096};
             int coo = 2002;
-            memset(send, 0, 4096);
-            for (int i=0;i<6;i++)
-                send[i] = mac[i]+1;
-            for (int i=0;i<6;i++)
-                send[i+6] = mac[i];
-            send[13] = 0x8;
+            printf("virt: %lx, phys0 : %lx, phys1: %lx\n", (unsigned long)send1 ,(unsigned long)phys[0], (unsigned long)phys[1]);
+            //memset(send, 0, 4096);
+            memcpy(send1, arp_packet, 4096);
+            memcpy(send2, arp_packet, 4096);
             if (rpcMsg.msg.net.op == 0)
-                env->init->eth_driver->i_fn.raw_tx(env->init->eth_driver, 1, &phys, &si, (void *)(&coo));
+                env->init->eth_driver->i_fn.raw_tx(env->init->eth_driver, 2, phys, si, (void *)(&coo));
             if (rpcMsg.msg.net.op == 1)
             {
                 while(1){

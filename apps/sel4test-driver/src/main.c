@@ -446,7 +446,7 @@ void *main_continued(void *arg UNUSED)
     errore = sel4platsupport_new_arch_ops(&pci_outops, &env.simple, &env.vka);
     libpci_scan(pci_inops.io_port_ops, pci_outops.io_port_ops);
 
-    // libpci_device_iocfg_debug_print(&libpci_find_device(0x8086, 0x10d3)->cfg, true);
+    libpci_device_iocfg_debug_print(&libpci_find_device(0x8086, 0x10d3)->cfg, true);
 
     // Check the device
     libpci_device_t* net = libpci_find_device(0x8086, 0x10d3);
@@ -455,6 +455,7 @@ void *main_continued(void *arg UNUSED)
     
     // Map device
     uint64_t paddr = libpci_device_iocfg_get_baseaddr(&net->cfg, 0);
+    printf("net paddr: %lx\n", (unsigned long)paddr);
     uint64_t size = net->cfg.base_addr_size[0];
     uint64_t page_num = size / 4096;
     seL4_CPtr frames[page_num];
