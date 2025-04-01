@@ -14,6 +14,28 @@
 
 #include "../helpers.h"
 
+struct io_uring_sqe {
+	uint8_t	opcode;		/* type of operation for this sqe */
+	uint8_t	flags;		/* IOSQE_ flags */
+	union {
+		uint64_t	addr;	/* pointer to buffer or iovecs */
+		uint64_t	splice_off_in;
+	};
+	uint32_t	len;		/* buffer size or number of iovecs */
+	uint16_t	user_cookie;	/* data to be passed back at completion time */
+};
+
+struct io_uring_state {
+	uint64_t*	sqes;		/* type of operation for this sqe */
+	uint64_t	sqes_len;		/* IOSQE_ flags */
+};
+
+static int user_thread(int32_t fd, uint64_t addr1, uint64_t addr2, uint64_t addr3)
+{
+    
+    return SUCCESS;
+}
+
 static int
 test_iouring(env_t env)
 {
@@ -42,6 +64,9 @@ test_iouring(env_t env)
         },
     };
     ret = sel4rpc_call(&env->rpc_client, &rpcMsg1, path.root, path.capPtr, path.capDepth);
+
+
+    helper_thread_t sq;
     return SUCCESS;
 }
 DEFINE_TEST(IOURING0001, "Test basic io uring", test_iouring, true)
