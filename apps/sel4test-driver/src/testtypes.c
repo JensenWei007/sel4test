@@ -197,12 +197,8 @@ static int sel4test_driver_wait(driver_env_t env, struct testcase *test)
             bool ret = pb_decode_delimited(&stream, &RpcMessage_msg, &rpcMsg);
             if (rpcMsg.which_msg != RpcMessage_net_tag)
                 sel4rpc_server_recv(&rpc_server);
-            uint8_t mac[6] = {0, 0, 0, 0, 0, 0};
-            env->init->eth_driver->i_fn.get_mac(env->init->eth_driver, mac);
-            for (int i=0;i<6;i++)
-                printf("============3, mac: %0x\n", (int)mac[i]);
+            
             memset(arp_packet + 42, 0, 4054);
-            //env->init->net_ops.dma_manager.dma_alloc_fn()
             uintptr_t phys[2] = {0, 0};
             uint8_t* send1 = (uint8_t*)ps_dma_alloc(&env->init->net_ops.dma_manager, 4096, 4096, 1, PS_MEM_NORMAL);
             phys[0] = ps_dma_pin(&env->init->net_ops.dma_manager, send1, 4096);
