@@ -217,11 +217,7 @@ static int sel4test_driver_wait(driver_env_t env, struct testcase *test)
             if (rpcMsg.msg.net.op == 0)
                 env->init->eth_driver->i_fn.raw_tx(env->init->eth_driver, 2, phys, si, (void *)(&coo));
             if (rpcMsg.msg.net.op == 1)
-            {
-                while(1){
-                    env->init->eth_driver->i_fn.raw_poll(env->init->eth_driver);
-                }
-            }
+                env->init->eth_driver->i_fn.raw_poll(env->init->eth_driver);
             sel4rpc_net_reply(&rpc_server, 0, 9, 11);
             continue;
         }
@@ -303,6 +299,10 @@ void basic_set_up(uintptr_t e)
         env->init->device_frame_cap = sel4utils_copy_cap_to_process(&(env->test_process), &env->vka, env->device_obj.cptr);
     }
 
+    if (env->init->sq_frame_cap) {
+        env->init->sq_frame_cap = sel4utils_copy_cap_to_process(&(env->test_process), &env->vka, env->init->sq_frame_cap);
+    }
+
     /* map the cap into remote vspace */
     env->remote_vaddr = vspace_share_mem(&env->vspace, &(env->test_process).vspace, env->init, 1, PAGE_BITS_4K,
                                          seL4_AllRights, 1);
@@ -325,6 +325,10 @@ void basic_set_up(uintptr_t e)
         //printf("before : %i, after: %i\n", (int)cap, (int)env->init->net_cap[i]);
     }
     env->init->free_slots.start = env->init->net_cap[31] + 1;
+
+    if (env->init->sq_frame_cap) {
+        env->init->free_slots.start = env->init->sq_frame_cap + 1;
+    }
 
     env->init->free_slots.end = (1u << TEST_PROCESS_CSPACE_SIZE_BITS);
     assert(env->init->free_slots.start < env->init->free_slots.end);

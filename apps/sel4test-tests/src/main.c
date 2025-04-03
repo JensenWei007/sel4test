@@ -215,6 +215,8 @@ int main(int argc, char **argv)
 
     env.device_frame = init_data->device_frame_cap;
 
+    env.cookies_v = init_data->sq_frame_cap;
+
     for (int i = 0; i < 32; i++)
         env.net_cap[i] = init_data->net_cap[i];
     env.eth_driver = init_data->eth_driver;

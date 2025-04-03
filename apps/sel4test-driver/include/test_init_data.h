@@ -103,6 +103,7 @@ typedef struct {
 
     struct eth_driver *eth_driver;
 
+    seL4_CPtr sq_frame_cap;
 } test_init_data_t;
 
 compile_time_assert(init_data_fits_in_ipc_buffer, sizeof(test_init_data_t) < PAGE_SIZE_4K);

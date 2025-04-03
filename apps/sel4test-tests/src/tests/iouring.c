@@ -75,9 +75,10 @@ bool map_frame(env_t env, seL4_CPtr frame, uint64_t *vaddr, helper_thread_t *thr
     return true;
 }
 
-static int user_thread(int32_t fd, uint64_t addr1, uint64_t addr2, uint64_t addr3)
+static int user_thread(uint64_t state_addr)
 {
-    
+    io_uring_state_t* state = (io_uring_state_t*)state_addr;
+
     return SUCCESS;
 }
 
@@ -119,6 +120,8 @@ test_iouring(env_t env)
     uint64_t paddr;
     io_uring_state_t* state;
     uint64_t state_user;
+    uint64_t* cookies;
+    uint64_t cookies_len = 4096 / 8;
 
     // Create io_uring_state_t and map
     uint64_t io_state_vaddr;
@@ -127,6 +130,7 @@ test_iouring(env_t env)
         return FAILURE;
     }
     state = (io_uring_state_t*)io_state_vaddr;
+    memset(state, 0, 4096);
     if (!map_frame(env, io_state_frame, &state_user, &user_thread)) {
         return FAILURE;
     }
@@ -160,6 +164,20 @@ test_iouring(env_t env)
         return FAILURE;
     }
     state->sqes_len = 4096 / sizeof(io_uring_sqe_t);
+
+    // Map cookies
+    void *cookies_t;
+    uintptr_t cookie = 0;
+    reservation_t reserve = vspace_reserve_range_aligned(&env->vspace, 2 * BIT(12), 12, seL4_AllRights, 1, &cookies_t);
+    if (vspace_map_pages_at_vaddr(&env->vspace, &env->cookies_v, &cookie, (void *)cookies_t, 1, 12, reserve))
+        return false;
+    cookies = (uint64_t*)cookies_t;
+
+    // Start user_thread
+    printf("================cores : %i\n", (int)env->cores);
+    if (env->cores > 1)
+        set_helper_affinity(env, &user_thread, 1);
+    //start_helper(env, &user_thread, user_thread, state_user, 0, 0, 0);
 
     return SUCCESS;
 }

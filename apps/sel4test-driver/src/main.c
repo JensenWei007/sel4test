@@ -81,10 +81,20 @@ extern char _cpio_archive_end[];
 
 static elf_t tests_elf;
 
+uint64_t cookies_v;
+
 static void txc(void *cb_cookie, void *cookie)
 {
-    int* e = (int*)cookie;
-    printf("cookie is down, %i\n", *e);
+    int* c = (int*)cookie;
+    uint64_t* cookies = (uint64_t*)cookies_v;
+    uint64_t cookie_len = 4096 / 8;
+    for(int i = 0; i < cookie_len; i++) {
+        if(cookies[i] == 0) {
+            cookies[i] = *c;
+            break;
+        }
+    }
+    printf("cookie is down : %i\n", *c);
 }
 
 static struct raw_iface_callbacks icb_fns = {
@@ -543,6 +553,14 @@ void *main_continued(void *arg UNUSED)
     //printf("============1, err: %i\n", e2);
     //printf("============2, addr: %lx\n", (unsigned long)env.init->eth_driver);
     env.init->eth_driver->i_cb = icb_fns;
+
+    seL4_CPtr cookies = vka_alloc_frame_leaky(&env.vka, 12);
+    void *vaddr_t;
+    reservation_t reserve1 = vspace_reserve_range_aligned(&env.vspace, 2 * BIT(12), 12, seL4_AllRights, 1, &vaddr_t);
+    vspace_map_pages_at_vaddr(&env.vspace, &cookies, &cookie, (void *)vaddr_t, 1, 12, reserve1);
+    cookies_v = (uint64_t)vaddr_t;
+    env.init->sq_frame_cap = cookies;
+    memset(vaddr_t, 0, 4096);
 
     /* Allocate a reply object for the RT kernel. */
     if (config_set(CONFIG_KERNEL_MCS)) {
