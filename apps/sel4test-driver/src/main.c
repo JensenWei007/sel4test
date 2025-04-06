@@ -555,12 +555,12 @@ void *main_continued(void *arg UNUSED)
     env.init->eth_driver->i_cb = icb_fns;
 
     seL4_CPtr cookies = vka_alloc_frame_leaky(&env.vka, 12);
-    void *vaddr_t;
+    void *vaddr_cookie;
     reservation_t reserve1 = vspace_reserve_range_aligned(&env.vspace, 2 * BIT(12), 12, seL4_AllRights, 1, &vaddr_t);
     vspace_map_pages_at_vaddr(&env.vspace, &cookies, &cookie, (void *)vaddr_t, 1, 12, reserve1);
-    cookies_v = (uint64_t)vaddr_t;
+    cookies_v = (uint64_t)vaddr_cookie;
     env.init->sq_frame_cap = cookies;
-    memset(vaddr_t, 0, 4096);
+    memset(vaddr_cookie, 0, 4096);
 
     /* Allocate a reply object for the RT kernel. */
     if (config_set(CONFIG_KERNEL_MCS)) {

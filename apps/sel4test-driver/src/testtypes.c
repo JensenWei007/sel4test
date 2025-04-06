@@ -210,10 +210,11 @@ static int sel4test_driver_wait(driver_env_t env, struct testcase *test)
             //memset(send, 0, 4096);
             memcpy(send1, arp_packet, 4096);
             memcpy(send2, arp_packet, 4096);
-            if (rpcMsg.msg.net.op == 0)
+            if (rpcMsg.msg.net.op == 0) {
                 env->init->eth_driver->i_fn.raw_tx(env->init->eth_driver, 2, phys, si, (void *)(&coo));
-            if (rpcMsg.msg.net.op == 1)
+            } else if (rpcMsg.msg.net.op == 1) {
                 env->init->eth_driver->i_fn.raw_poll(env->init->eth_driver);
+            }
             sel4rpc_net_reply(&rpc_server, 0, 9, 11);
             continue;
         }

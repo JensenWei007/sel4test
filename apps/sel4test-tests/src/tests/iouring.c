@@ -75,11 +75,80 @@ bool map_frame(env_t env, seL4_CPtr frame, uint64_t *vaddr, helper_thread_t *thr
     return true;
 }
 
+static uint64_t get_cookie()
+{
+    static uint64_t ret = 0;
+    return ret++;
+}
+
+static int user_add_sq(io_uring_state_t* state)
+{
+    uint64_t sqes_len = state->sqes_len;
+    uint64_t tail = state->sq_user_tail;
+    if (tail + 1 == sqes_len) {
+        state->sq_user_tail = 0;
+    } else {
+        state->sq_user_tail += 1;
+    }
+    io_uring_sqe_t* sqes = (io_uring_sqe_t*)state->sqes_user;
+    io_uring_sqe_t* sqe = &sqes[tail];
+    sqe->opcode = 1;
+    sqe->user_cookie = get_cookie();
+    sqe->flags |= 0x1;
+    return 1;
+}
+
 static int user_thread(uint64_t state_addr)
 {
     io_uring_state_t* state = (io_uring_state_t*)state_addr;
+    if (!user_add_sq(state))
+        return FAILURE;
+    // do multiple
 
     return SUCCESS;
+}
+
+static int add_sq(uint64_t cookie)
+{
+    cspacepath_t path;
+    int error;
+    error = vka_cspace_alloc_path(&env->vka, &path);
+    RpcMessage rpcMsg = {
+        .which_msg = RpcMessage_net_tag,
+        .msg.net = {
+            .op = 0,
+            .result = 1,
+            .group = 99,
+            .cookie = cookie,
+        },
+    };
+    int ret = sel4rpc_call(&env->rpc_client, &rpcMsg, path.root, path.capPtr, path.capDepth);
+    printf("first coo: %i, result: %i\n", (int)rpcMsg.msg.net.cookie, (int)rpcMsg.msg.net.result);
+}
+
+static uint64_t add_cq(io_uring_state_t* state, uint64_t* cookies, uint64_t cookies_len)
+{
+    cspacepath_t path;
+    int error;
+    error = vka_cspace_alloc_path(&env->vka, &path);
+    RpcMessage rpcMsg = {
+        .which_msg = RpcMessage_net_tag,
+        .msg.net = {
+            .op = 1,
+            .result = 1,
+            .group = 99,
+            .cookie = cookie,
+        },
+    };
+    int ret = sel4rpc_call(&env->rpc_client, &rpcMsg, path.root, path.capPtr, path.capDepth);
+    for(int i = 0; i < cookies_len; i++) {
+        if(cookies[i] == 0)
+            break;
+        uint64_t temp = cookies[i];
+        cookies[i] = 0;
+        return temp;
+    }
+    return 0;
 }
 
 static int
@@ -177,7 +246,29 @@ test_iouring(env_t env)
     printf("================cores : %i\n", (int)env->cores);
     if (env->cores > 1)
         set_helper_affinity(env, &user_thread, 1);
-    //start_helper(env, &user_thread, user_thread, state_user, 0, 0, 0);
+    start_helper(env, &user_thread, user_thread, state_user, 0, 0, 0);
+
+    // do cq
+    io_uring_sqe_t* sqes = (io_uring_sqe_t*)state->sqes_sqt;
+    while(1) {
+        uint64_t sqes_len = state->sqes_len;
+        uint64_t head = state->sq_sqt_head;
+        io_uring_sqe_t* sqe = &sqes[head];
+        if(sqe->flags & 0x1) {
+            if (head + 1 == sqes_len) {
+                state->sq_sqt_head = 0;
+            } else {
+                state->sq_sqt_head += 1;
+            }
+            if (!add_sq(sqe->user_cookie))
+                return FAILURE;
+        }
+        uint64_t cookie = add_cq();
+        if(cookie != 0) {
+            
+            break;
+        }
+    }
 
     return SUCCESS;
 }
