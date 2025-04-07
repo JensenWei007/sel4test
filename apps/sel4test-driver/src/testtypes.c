@@ -323,10 +323,6 @@ void basic_set_up(uintptr_t e)
     }
     env->init->free_slots.start = env->init->net_cap[31] + 1;
 
-    if (env->init->sq_frame_cap) {
-        env->init->free_slots.start = env->init->sq_frame_cap + 1;
-    }
-
     env->init->free_slots.end = (1u << TEST_PROCESS_CSPACE_SIZE_BITS);
     assert(env->init->free_slots.start < env->init->free_slots.end);
 }

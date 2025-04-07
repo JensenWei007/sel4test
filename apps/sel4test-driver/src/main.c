@@ -556,8 +556,8 @@ void *main_continued(void *arg UNUSED)
 
     seL4_CPtr cookies = vka_alloc_frame_leaky(&env.vka, 12);
     void *vaddr_cookie;
-    reservation_t reserve1 = vspace_reserve_range_aligned(&env.vspace, 2 * BIT(12), 12, seL4_AllRights, 1, &vaddr_t);
-    vspace_map_pages_at_vaddr(&env.vspace, &cookies, &cookie, (void *)vaddr_t, 1, 12, reserve1);
+    reservation_t reserve1 = vspace_reserve_range_aligned(&env.vspace, 2 * BIT(12), 12, seL4_AllRights, 1, &vaddr_cookie);
+    vspace_map_pages_at_vaddr(&env.vspace, &cookies, &cookie, (void *)vaddr_cookie, 1, 12, reserve1);
     cookies_v = (uint64_t)vaddr_cookie;
     env.init->sq_frame_cap = cookies;
     memset(vaddr_cookie, 0, 4096);
