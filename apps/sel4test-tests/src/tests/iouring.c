@@ -23,18 +23,35 @@ struct io_uring_sqe {
 	};
 	uint32_t	len;
 	uint64_t	user_cookie;
-    uint16_t    result;
 };
 typedef struct io_uring_sqe io_uring_sqe_t;
+
+struct io_uring_cqe {
+	uint8_t	flags;
+    uint64_t	user_cookie;
+    uint16_t    result;
+	union {
+		uint64_t    addr;
+		uint64_t	splice_off_in;
+	};
+	uint32_t	len;
+};
+typedef struct io_uring_cqe io_uring_cqe_t;
+
 
 struct io_uring_state {
 	uint64_t 	sqes_sqt;
     uint64_t 	sqes_user;
 	uint64_t	sqes_len;
 
+    uint64_t 	cqes_sqt;
+    uint64_t 	cqes_user;
+	uint64_t	cqes_len;
+
     uint64_t	sq_sqt;
     uint64_t	sq_user;
     uint64_t	sq_len;
+
     uint64_t	cq_sqt;
     uint64_t	cq_user;
     uint64_t	cq_len;
@@ -98,17 +115,7 @@ static int user_add_sq(io_uring_state_t* state)
     return 1;
 }
 
-static int user_thread(uint64_t state_addr)
-{
-    io_uring_state_t* state = (io_uring_state_t*)state_addr;
-    if (!user_add_sq(state))
-        return FAILURE;
-    // do multiple
-
-    return SUCCESS;
-}
-
-static int add_sq(uint64_t cookie)
+static int sqt_add_sq(uint64_t cookie)
 {
     cspacepath_t path;
     int error;
@@ -126,7 +133,7 @@ static int add_sq(uint64_t cookie)
     printf("first coo: %i, result: %i\n", (int)rpcMsg.msg.net.cookie, (int)rpcMsg.msg.net.result);
 }
 
-static uint64_t add_cq(io_uring_state_t* state, uint64_t* cookies, uint64_t cookies_len)
+static uint64_t sqt_get_cq(uint64_t* cookies, uint64_t cookies_len)
 {
     cspacepath_t path;
     int error;
@@ -149,6 +156,33 @@ static uint64_t add_cq(io_uring_state_t* state, uint64_t* cookies, uint64_t cook
         return temp;
     }
     return 0;
+}
+
+static int sqt_add_cq(io_uring_state_t* state, uint64_t cookie)
+{
+    uint64_t cqes_len = state->cqes_len;
+    uint64_t tail = state->cq_sqt_tail;
+    if (tail + 1 == cqes_len) {
+        state->cq_sqt_tail = 0;
+    } else {
+        state->cq_sqt_tail += 1;
+    }
+    io_uring_cqe_t* cqes = (io_uring_cqe_t*)state->cqes_sqt;
+    io_uring_cqe_t* cqe = &cqes[tail];
+    cqe->user_cookie = cookie;
+    cqe->flags |= 0x1;
+    cqe->result = 1;
+    return 1;
+}
+
+static int user_thread(uint64_t state_addr)
+{
+    io_uring_state_t* state = (io_uring_state_t*)state_addr;
+    if (!user_add_sq(state))
+        return FAILURE;
+    // do multiple
+
+    return SUCCESS;
 }
 
 static int
@@ -212,7 +246,7 @@ test_iouring(env_t env)
     if (!map_frame(env, cq_frame, &(state->cq_user), &user_thread)) {
         return FAILURE;
     }
-    state->cq_len = 4096 / sizeof(io_uring_sqe_t*);
+    state->cq_len = 4096 / sizeof(io_uring_cqe_t*);
 
     // Create sq and map
     seL4_CPtr sq_frame;
@@ -233,6 +267,16 @@ test_iouring(env_t env)
         return FAILURE;
     }
     state->sqes_len = 4096 / sizeof(io_uring_sqe_t);
+
+    // Create cqs and map
+    seL4_CPtr cqs_frame;
+    if (!create_iouring_sharedpage(env, &paddr, &(state->cqes_sqt), &cqs_frame)) {
+        return FAILURE;
+    }
+    if (!map_frame(env, cqs_frame, &(state->cqes_user), &user_thread)) {
+        return FAILURE;
+    }
+    state->cqes_len = 4096 / sizeof(io_uring_cqe_t);
 
     // Map cookies
     void *cookies_t;
@@ -260,10 +304,11 @@ test_iouring(env_t env)
             } else {
                 state->sq_sqt_head += 1;
             }
-            if (!add_sq(sqe->user_cookie))
+            if (!sqt_add_sq(sqe->user_cookie))
                 return FAILURE;
+            memset(sqe, 0, sizeof(io_uring_sqe_t));
         }
-        uint64_t cookie = add_cq();
+        uint64_t cookie = sqt_get_cq();
         if(cookie != 0) {
             
             break;
