@@ -16,6 +16,7 @@ endif()
 
 set_source_files_properties(src/tests/uintr.c PROPERTIES COMPILE_FLAGS "-muintr -mgeneral-regs-only -minline-all-stringops")
 set_source_files_properties(src/tests/pingpong.c PROPERTIES COMPILE_FLAGS "-muintr -mgeneral-regs-only -minline-all-stringops")
+set_source_files_properties(src/tests/iouring.c PROPERTIES COMPILE_FLAGS "-muintr -mgeneral-regs-only -minline-all-stringops")
 
 file(
     GLOB

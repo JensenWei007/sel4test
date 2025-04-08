@@ -14,6 +14,10 @@
 
 #include "../helpers.h"
 
+#include </usr/include/clang/14/include/x86gprintrin.h>
+
+#define COMP 7*100000
+
 struct io_uring_sqe {
 	uint8_t	opcode;
 	uint8_t	flags;
@@ -72,8 +76,25 @@ struct io_uring_state {
 
     uint64_t	cq_sqt_tail;
     uint64_t	cq_user_head;
+
+    uint64_t    uintr_upid_paddr;
+    uint64_t    uintr_upid_vaddr;
+
+    uint64_t    uintr_fd[10];
+    uint64_t    uintr_fd_valid[10];
 };
 typedef struct io_uring_state io_uring_state_t;
+
+uint64_t state_addr_uintr;
+uint64_t io_isdown;
+
+bool compute(uint64_t size){
+    uint64_t x = 2;
+    for(unsigned long i = 1; i < COMP * size; i++) {
+        x *= i;
+    }
+    return 1;
+}
 
 bool create_iouring_sharedpage(env_t env, uint64_t *paddr, uint64_t *vaddr, seL4_CPtr *page_frame)
 {
@@ -207,49 +228,62 @@ static int sqt_add_cq(io_uring_state_t* state, uint64_t cookie)
 static int user_thread_func(uint64_t state_addr)
 {
     io_uring_state_t* state = (io_uring_state_t*)state_addr;
-    printf("user will add sq\n");
+
     if (!user_add_sq(state))
         return FAILURE;
-    printf("user will add sq end\n");
+    
     // do multiple
     uint64_t cookie = 0;
-    printf("user will get cq\n");
-    while(!user_get_cq(state, &cookie)) {};
-    printf("user get cq end\n");
+    while(!user_get_cq(state, &cookie)) {
+        compute(10);
+    };
+    
+    return SUCCESS;
+}
+
+static void __attribute__((interrupt)) uintr_handler(struct __uintr_frame *ui_frame, unsigned long long vector)
+{
+    printf("========== UINTR HANDLER START ==========\n");
+    io_uring_state_t* state = (io_uring_state_t*)state_addr_uintr;
+    uint64_t cookie = 0;
+    if(!user_get_cq(state, &cookie))
+        printf("== Error, uintr hasnot cq ==\n");
+    io_isdown = 1;
+    printf("=========== UINTR HANDLER END ===========\n");
+}
+
+static int user_thread_func_uintr(uint64_t state_addr)
+{
+    state_addr_uintr = state_addr;
+    io_isdown = 0;
+    io_uring_state_t* state = (io_uring_state_t*)state_addr;
+
+    uint64_t addr[2] = {state->uintr_upid_paddr, state->uintr_upid_vaddr};
+    seL4_uintr_register_handler((uint64_t)uintr_handler, 0, addr);
+
+    state->uintr_fd[0] = seL4_uintr_vector_fd(0, 0);
+    state->uintr_fd_valid[0] = 1;
+
+	_stui();
+
+    if (!user_add_sq(state))
+        return FAILURE;
+    
+    // do multiple
+    uint64_t cookie = 0;
+    while(!io_isdown) {
+        compute(10);
+    };
+
+    seL4_uintr_unregister_handler(0);
+    _clui();
+
     return SUCCESS;
 }
 
 static int
 test_iouring(env_t env)
 {
-    /*
-    cspacepath_t path;
-    int error;
-    error = vka_cspace_alloc_path(&env->vka, &path);
-    RpcMessage rpcMsg = {
-        .which_msg = RpcMessage_net_tag,
-        .msg.net = {
-            .op = 0,
-            .result = 1,
-            .group = 99,
-            .cookie = 1,
-        },
-    };
-    int ret = sel4rpc_call(&env->rpc_client, &rpcMsg, path.root, path.capPtr, path.capDepth);
-    printf("first coo: %i, result: %i\n", (int)rpcMsg.msg.net.cookie, (int)rpcMsg.msg.net.result);
-
-    RpcMessage rpcMsg1 = {
-        .which_msg = RpcMessage_net_tag,
-        .msg.net = {
-            .op = 1,
-            .result = 1,
-            .group = 99,
-            .cookie = 1,
-        },
-    };
-    ret = sel4rpc_call(&env->rpc_client, &rpcMsg1, path.root, path.capPtr, path.capDepth);
-    */
-
     helper_thread_t user_thread;
     create_helper_process(env, &user_thread);
 
@@ -320,14 +354,13 @@ test_iouring(env_t env)
     cookies = (uint64_t*)cookies_vaddr;
 
     // Start user_thread
-    printf("================cores : %i, user: %lx\n", (int)env->cores, (unsigned long)state->state_user);
+    //printf("================cores : %i, user: %lx\n", (int)env->cores, (unsigned long)state->state_user);
     if (env->cores > 1)
         set_helper_affinity(env, &user_thread, 1);
     start_helper(env, &user_thread, user_thread_func, state->state_user, 0, 0, 0);
 
     // do cq
     io_uring_sqe_t* sqes = (io_uring_sqe_t*)state->sqes_sqt;
-    printf("sqt will get sq\n");
     while(1) {
         uint64_t sqes_len = state->sqes_len;
         uint64_t head = state->sq_sqt_head;
@@ -338,15 +371,12 @@ test_iouring(env_t env)
             } else {
                 state->sq_sqt_head += 1;
             }
-            printf("sqt will add sq\n");
             if (!sqt_add_sq(env, sqe->user_cookie))
                 return FAILURE;
             memset(sqe, 0, sizeof(io_uring_sqe_t));
-            printf("sqt will add sq end\n");
         }
         uint64_t cookie = sqt_get_cq(env, cookies_vaddr, 4096 / 8);
         if(cookie != 0) {
-            printf("sqt will get cq\n");
             sqt_add_cq(state, cookie);
             break;
         }
@@ -356,3 +386,135 @@ test_iouring(env_t env)
     return SUCCESS;
 }
 DEFINE_TEST(IOURING0001, "Test basic io uring", test_iouring, true)
+
+static int
+test_iouring_uintr(env_t env)
+{
+    helper_thread_t user_thread;
+    create_helper_process(env, &user_thread);
+
+    // We will use
+    uint64_t paddr;
+    io_uring_state_t* state;
+    uint64_t* cookies;
+    uint64_t cookies_len = 4096 / 8;
+
+    // Create io_uring_state_t and map
+    uint64_t io_state_vaddr;
+    seL4_CPtr io_state_frame;
+    if (!create_iouring_sharedpage(env, &paddr, &io_state_vaddr, &io_state_frame)) {
+        return FAILURE;
+    }
+    state = (io_uring_state_t*)io_state_vaddr;
+    //memset(state, 0, 4096);
+    if (!map_frame(env, io_state_frame, &(state->state_user), &user_thread)) {
+        return FAILURE;
+    }
+
+    // Create cq and map
+    seL4_CPtr cq_frame;
+    if (!create_iouring_sharedpage(env, &paddr, &(state->cq_sqt), &cq_frame)) {
+        return FAILURE;
+    }
+    if (!map_frame(env, cq_frame, &(state->cq_user), &user_thread)) {
+        return FAILURE;
+    }
+    state->cq_len = 4096 / sizeof(io_uring_cqe_t*);
+
+    // Create sq and map
+    seL4_CPtr sq_frame;
+    if (!create_iouring_sharedpage(env, &paddr, &(state->sq_sqt), &sq_frame)) {
+        return FAILURE;
+    }
+    if (!map_frame(env, sq_frame, &(state->sq_user), &user_thread)) {
+        return FAILURE;
+    }
+    state->sq_len = 4096 / sizeof(io_uring_sqe_t*);
+
+    // Create sqs and map
+    seL4_CPtr sqs_frame;
+    if (!create_iouring_sharedpage(env, &paddr, &(state->sqes_sqt), &sqs_frame)) {
+        return FAILURE;
+    }
+    if (!map_frame(env, sqs_frame, &(state->sqes_user), &user_thread)) {
+        return FAILURE;
+    }
+    state->sqes_len = 4096 / sizeof(io_uring_sqe_t);
+
+    // Create cqs and map
+    seL4_CPtr cqs_frame;
+    if (!create_iouring_sharedpage(env, &paddr, &(state->cqes_sqt), &cqs_frame)) {
+        return FAILURE;
+    }
+    if (!map_frame(env, cqs_frame, &(state->cqes_user), &user_thread)) {
+        return FAILURE;
+    }
+    state->cqes_len = 4096 / sizeof(io_uring_cqe_t);
+
+    // Map cookies
+    void *cookies_vaddr;
+    uintptr_t cookie = 0;
+    reservation_t reserve = vspace_reserve_range_aligned(&env->vspace, 2 * BIT(12), 12, seL4_AllRights, 1, &cookies_vaddr);
+    if (vspace_map_pages_at_vaddr(&env->vspace, &env->cookies_v, &cookie, (void *)cookies_vaddr, 1, 12, reserve))
+        return false;
+    cookies = (uint64_t*)cookies_vaddr;
+
+    // Create UITT
+    seL4_CPtr frame_uitt;
+    uint64_t uitt_sender_paddr;
+    uint64_t uitt_sender_vaddr;
+    if (!create_iouring_sharedpage(env, &uitt_sender_paddr, &uitt_sender_vaddr, &frame_uitt)) {
+        return FAILURE;
+    }
+
+    // Create and map UPID
+    seL4_CPtr frame_upid;
+    uint64_t upid_sender_vaddr;
+    if (!create_iouring_sharedpage(env, &(state->uintr_upid_paddr), &upid_sender_vaddr, &frame_upid)) {
+        return FAILURE;
+    }
+    if (!map_frame(env, frame_upid, &(state->uintr_upid_vaddr), &user_thread)) {
+        return FAILURE;
+    }
+
+    // Start user_thread
+    //printf("================cores : %i, user: %lx\n", (int)env->cores, (unsigned long)state->state_user);
+    if (env->cores > 1)
+        set_helper_affinity(env, &user_thread, 1);
+    start_helper(env, &user_thread, user_thread_func_uintr, state->state_user, 0, 0, 0);
+
+    // Wait for uintr_fd and register
+    while(!state->uintr_fd_valid[0]) {};
+    uint64_t addr[3] = {upid_sender_vaddr, uitt_sender_paddr, uitt_sender_vaddr};
+    int index = seL4_uintr_register_sender(state->uintr_fd[0], 0, addr);
+
+    // do cq
+    io_uring_sqe_t* sqes = (io_uring_sqe_t*)state->sqes_sqt;
+    while(1) {
+        uint64_t sqes_len = state->sqes_len;
+        uint64_t head = state->sq_sqt_head;
+        io_uring_sqe_t* sqe = &sqes[head];
+        if(sqe->flags & 0x1) {
+            if (head + 1 == sqes_len) {
+                state->sq_sqt_head = 0;
+            } else {
+                state->sq_sqt_head += 1;
+            }
+            if (!sqt_add_sq(env, sqe->user_cookie))
+                return FAILURE;
+            memset(sqe, 0, sizeof(io_uring_sqe_t));
+        }
+        uint64_t cookie = sqt_get_cq(env, cookies_vaddr, 4096 / 8);
+        if(cookie != 0) {
+            sqt_add_cq(state, cookie);
+            _senduipi(index);
+            break;
+        }
+    }
+    
+    wait_for_helper(&user_thread);
+
+    seL4_uintr_unregister_sender(index, 0);
+    return SUCCESS;
+}
+DEFINE_TEST(IOURING0002, "Test basic io uring with uintr", test_iouring_uintr, true)
