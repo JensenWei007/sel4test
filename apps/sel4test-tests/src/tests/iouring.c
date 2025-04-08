@@ -49,6 +49,8 @@ struct io_uring_cqes {
 typedef struct io_uring_cqes io_uring_cqes_t;
 
 struct io_uring_state {
+    uint64_t    state_user;
+
 	uint64_t 	sqes_sqt;
     uint64_t 	sqes_user;
 	uint64_t	sqes_len;
@@ -77,13 +79,13 @@ bool create_iouring_sharedpage(env_t env, uint64_t *paddr, uint64_t *vaddr, seL4
 {
     seL4_CPtr frame = vka_alloc_frame_leaky(&env->vka, 12);
     seL4_ARCH_Page_GetAddress_t paddr_t = seL4_X86_Page_GetAddress(frame);
-    void *vaddr_t;
+    void *vaddr_t1;
     uintptr_t cookie = 0;
-    reservation_t reserve = vspace_reserve_range_aligned(&env->vspace, 2 * BIT(12), 12, seL4_AllRights, 1, &vaddr_t);
-    if (vspace_map_pages_at_vaddr(&env->vspace, &frame, &cookie, (void *)vaddr_t, 1, 12, reserve))
+    reservation_t reserve = vspace_reserve_range_aligned(&env->vspace, 2 * BIT(12), 12, seL4_AllRights, 1, &vaddr_t1);
+    if (vspace_map_pages_at_vaddr(&env->vspace, &frame, &cookie, (void *)vaddr_t1, 1, 12, reserve))
         return false;
     *paddr = paddr_t.paddr;
-    *vaddr = (uint64_t)vaddr;
+    *vaddr = (uint64_t)vaddr_t1;
     *page_frame = frame;
     return true;
 }
@@ -97,7 +99,6 @@ bool map_frame(env_t env, seL4_CPtr frame, uint64_t *vaddr, helper_thread_t *thr
     reservation_t reserve = vspace_reserve_range_aligned(&thread->process.vspace, 2 * BIT(12), 12, seL4_AllRights, 1, &vaddr_2);
     if (vspace_map_pages_at_vaddr(&thread->process.vspace, &frame_2, &cookie, (void *)vaddr_2, 1, 12, reserve))
         return false;
-    printf("map, vaddr: %lx\n", (unsigned long)vaddr_2);
     *vaddr = (uint64_t)vaddr_2;
     return true;
 }
@@ -118,10 +119,7 @@ static int user_add_sq(io_uring_state_t* state)
         state->sq_user_tail += 1;
     }
     io_uring_sqes_t* sqes = (io_uring_sqes_t*)state->sqes_user;
-    printf("====22, addr: %lx\n", (unsigned long)sqes);
-    printf("====1\n");
     sqes->sqes[tail].opcode = 1;
-    printf("====2\n");
     sqes->sqes[tail].user_cookie = get_cookie();
     sqes->sqes[tail].flags |= 0x1;
     return 1;
@@ -142,7 +140,7 @@ static int sqt_add_sq(env_t env, uint64_t cookie)
         },
     };
     int ret = sel4rpc_call(&env->rpc_client, &rpcMsg, path.root, path.capPtr, path.capDepth);
-    //printf("first coo: %i, result: %i\n", (int)rpcMsg.msg.net.cookie, (int)rpcMsg.msg.net.result);
+    return 1;
 }
 
 static uint64_t sqt_get_cq(env_t env, uint64_t* cookies, uint64_t cookies_len)
@@ -258,11 +256,9 @@ test_iouring(env_t env)
     // We will use
     uint64_t paddr;
     io_uring_state_t* state;
-    uint64_t state_user;
     uint64_t* cookies;
     uint64_t cookies_len = 4096 / 8;
 
-    printf("========1\n");
     // Create io_uring_state_t and map
     uint64_t io_state_vaddr;
     seL4_CPtr io_state_frame;
@@ -271,10 +267,9 @@ test_iouring(env_t env)
     }
     state = (io_uring_state_t*)io_state_vaddr;
     //memset(state, 0, 4096);
-    if (!map_frame(env, io_state_frame, &state_user, &user_thread)) {
+    if (!map_frame(env, io_state_frame, &(state->state_user), &user_thread)) {
         return FAILURE;
     }
-    printf("=suvaddr: %lx\n", (unsigned long)state_user);
 
     // Create cq and map
     seL4_CPtr cq_frame;
@@ -285,8 +280,6 @@ test_iouring(env_t env)
         return FAILURE;
     }
     state->cq_len = 4096 / sizeof(io_uring_cqe_t*);
-    printf("=cqvaddr: %lx\n", (unsigned long)state->cq_user);
-    printf("=suvaddr: %lx\n", (unsigned long)state_user);
 
     // Create sq and map
     seL4_CPtr sq_frame;
@@ -297,27 +290,16 @@ test_iouring(env_t env)
         return FAILURE;
     }
     state->sq_len = 4096 / sizeof(io_uring_sqe_t*);
-    printf("=sqvaddr: %lx\n", (unsigned long)state->sq_user);
-    printf("=suvaddr: %lx\n", (unsigned long)state_user);
 
-    /*
     // Create sqs and map
     seL4_CPtr sqs_frame;
     if (!create_iouring_sharedpage(env, &paddr, &(state->sqes_sqt), &sqs_frame)) {
         return FAILURE;
     }
-    printf("=suvaddr11: %lx\n", (unsigned long)state_user);
-    uint64_t temp = 0;
-    if (!map_frame(env, sqs_frame, &temp, &user_thread)) {
+    if (!map_frame(env, sqs_frame, &(state->sqes_user), &user_thread)) {
         return FAILURE;
     }
-    state->sqes_user = temp;
-    printf("=suvaddr22: %lx\n", (unsigned long)state_user);
     state->sqes_len = 4096 / sizeof(io_uring_sqe_t);
-    printf("=sqsvaddr: %lx\n", (unsigned long)state->sqes_user);
-    printf("=suvaddr33: %lx\n", (unsigned long)state_user);
-    */
-    state->sqes_user = 111;
 
     // Create cqs and map
     seL4_CPtr cqs_frame;
@@ -328,8 +310,6 @@ test_iouring(env_t env)
         return FAILURE;
     }
     state->cqes_len = 4096 / sizeof(io_uring_cqe_t);
-    printf("=cqsvaddr: %lx\n", (unsigned long)state->cqes_user);
-    printf("=suvaddr: %lx\n", (unsigned long)state_user);
 
     // Map cookies
     void *cookies_vaddr;
@@ -340,13 +320,12 @@ test_iouring(env_t env)
     cookies = (uint64_t*)cookies_vaddr;
 
     // Start user_thread
-    printf("================cores : %i, stateuser: %lx\n", (int)env->cores, (unsigned long)state_user);
+    printf("================cores : %i, user: %lx\n", (int)env->cores, (unsigned long)state->state_user);
     if (env->cores > 1)
         set_helper_affinity(env, &user_thread, 1);
-    start_helper(env, &user_thread, user_thread_func, state_user, 0, 0, 0);
+    start_helper(env, &user_thread, user_thread_func, state->state_user, 0, 0, 0);
 
     // do cq
-    /*
     io_uring_sqe_t* sqes = (io_uring_sqe_t*)state->sqes_sqt;
     printf("sqt will get sq\n");
     while(1) {
@@ -372,7 +351,7 @@ test_iouring(env_t env)
             break;
         }
     }
-    */
+    
     wait_for_helper(&user_thread);
     return SUCCESS;
 }

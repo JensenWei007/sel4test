@@ -197,20 +197,19 @@ static int sel4test_driver_wait(driver_env_t env, struct testcase *test)
             bool ret = pb_decode_delimited(&stream, &RpcMessage_msg, &rpcMsg);
             if (rpcMsg.which_msg != RpcMessage_net_tag)
                 sel4rpc_server_recv(&rpc_server);
-            
-            memset(arp_packet + 42, 0, 4054);
-            uintptr_t phys[2] = {0, 0};
-            uint8_t* send1 = (uint8_t*)ps_dma_alloc(&env->init->net_ops.dma_manager, 4096, 4096, 1, PS_MEM_NORMAL);
-            phys[0] = ps_dma_pin(&env->init->net_ops.dma_manager, send1, 4096);
-            uint8_t* send2 = (uint8_t*)ps_dma_alloc(&env->init->net_ops.dma_manager, 4096, 4096, 1, PS_MEM_NORMAL);
-            phys[1] = ps_dma_pin(&env->init->net_ops.dma_manager, send2, 4096);
-            unsigned int si[2] = {4096, 4096};
-            int coo = 2002;
-            printf("virt: %lx, phys0 : %lx, phys1: %lx\n", (unsigned long)send1 ,(unsigned long)phys[0], (unsigned long)phys[1]);
-            //memset(send, 0, 4096);
-            memcpy(send1, arp_packet, 4096);
-            memcpy(send2, arp_packet, 4096);
             if (rpcMsg.msg.net.op == 0) {
+                memset(arp_packet + 42, 0, 4054);
+                uintptr_t phys[2] = {0, 0};
+                uint8_t* send1 = (uint8_t*)ps_dma_alloc(&env->init->net_ops.dma_manager, 4096, 4096, 1, PS_MEM_NORMAL);
+                phys[0] = ps_dma_pin(&env->init->net_ops.dma_manager, send1, 4096);
+                uint8_t* send2 = (uint8_t*)ps_dma_alloc(&env->init->net_ops.dma_manager, 4096, 4096, 1, PS_MEM_NORMAL);
+                phys[1] = ps_dma_pin(&env->init->net_ops.dma_manager, send2, 4096);
+                unsigned int si[2] = {4096, 4096};
+                int coo = 2002;
+                printf("virt: %lx, phys0 : %lx, phys1: %lx\n", (unsigned long)send1 ,(unsigned long)phys[0], (unsigned long)phys[1]);
+                //memset(send, 0, 4096);
+                memcpy(send1, arp_packet, 4096);
+                memcpy(send2, arp_packet, 4096);
                 env->init->eth_driver->i_fn.raw_tx(env->init->eth_driver, 2, phys, si, (void *)(&coo));
             } else if (rpcMsg.msg.net.op == 1) {
                 env->init->eth_driver->i_fn.raw_poll(env->init->eth_driver);
