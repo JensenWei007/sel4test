@@ -17,6 +17,7 @@
 #include </usr/include/clang/14/include/x86gprintrin.h>
 
 #define COMP 7*100000
+#define COMP_SIZE 100
 
 struct io_uring_sqe {
 	uint8_t	opcode;
@@ -87,6 +88,30 @@ typedef struct io_uring_state io_uring_state_t;
 
 uint64_t state_addr_uintr;
 uint64_t io_isdown;
+
+#define FASTFN inline __attribute__((always_inline))
+
+static FASTFN void private_lfence()
+{
+    asm volatile("lfence");
+}
+
+static FASTFN uint64_t private_rdtsc()
+{
+    uint32_t lo, hi;
+    asm volatile(
+        "rdtsc"
+        : "=a"(lo), "=d"(hi));
+    return (((uint64_t)hi << 32ull) | (uint64_t)lo);
+}
+
+static FASTFN uint64_t get_cycle_count()
+{
+    private_lfence(); /* Serialise all preceding instructions */
+    uint64_t time = private_rdtsc();
+    private_lfence(); /* Serialise all following instructions */
+    return time;
+}
 
 bool compute(uint64_t size){
     uint64_t x = 2;
@@ -180,11 +205,11 @@ static uint64_t sqt_get_cq(env_t env, uint64_t* cookies, uint64_t cookies_len)
     };
     int ret = sel4rpc_call(&env->rpc_client, &rpcMsg, path.root, path.capPtr, path.capDepth);
     for(int i = 0; i < cookies_len; i++) {
-        if(cookies[i] == 0)
-            break;
-        uint64_t temp = cookies[i];
-        cookies[i] = 0;
-        return temp;
+        if(cookies[i] != 0) {
+            uint64_t temp = cookies[i];
+            cookies[i] = 0;
+            return temp;
+        }
     }
     return 0;
 }
@@ -235,9 +260,9 @@ static int user_thread_func(uint64_t state_addr)
     // do multiple
     uint64_t cookie = 0;
     while(!user_get_cq(state, &cookie)) {
-        compute(10);
+        compute(COMP_SIZE);
     };
-    
+
     return SUCCESS;
 }
 
@@ -268,11 +293,10 @@ static int user_thread_func_uintr(uint64_t state_addr)
 
     if (!user_add_sq(state))
         return FAILURE;
-    
+
     // do multiple
-    uint64_t cookie = 0;
     while(!io_isdown) {
-        compute(10);
+        compute(COMP_SIZE);
     };
 
     seL4_uintr_unregister_handler(0);
@@ -280,6 +304,42 @@ static int user_thread_func_uintr(uint64_t state_addr)
 
     return SUCCESS;
 }
+
+static int
+test_io(env_t env)
+{
+    uint64_t cookie = 0;
+
+    // Map cookies
+    void *cookies_vaddr;
+    uint64_t* cookies;
+    uintptr_t cookie1 = 0;
+    reservation_t reserve = vspace_reserve_range_aligned(&env->vspace, 2 * BIT(12), 12, seL4_AllRights, 1, &cookies_vaddr);
+    if (vspace_map_pages_at_vaddr(&env->vspace, &env->cookies_v, &cookie1, (void *)cookies_vaddr, 1, 12, reserve))
+        return false;
+    cookies = (uint64_t*)cookies_vaddr;
+
+    uint64_t compute_start = get_cycle_count();
+    compute(COMP_SIZE);
+    uint64_t compute_end = get_cycle_count();
+    printf("== Compute cycles: %lu ==\n", (unsigned long)(compute_end - compute_start));
+    
+    uint64_t io_start = get_cycle_count();
+    sqt_add_sq(env, &cookie);
+    while(!sqt_get_cq(env, cookies_vaddr, 4096 / 8)) {};
+    uint64_t io_end = get_cycle_count();
+    printf("== IO cycles: %lu ==\n", (unsigned long)(io_end - io_start));
+
+    uint64_t all_start = get_cycle_count();
+    sqt_add_sq(env, &cookie);
+    while(!sqt_get_cq(env, cookies_vaddr, 4096 / 8)) {};
+    compute(COMP_SIZE);
+    uint64_t all_end = get_cycle_count();
+    printf("== ALL cycles: %lu ==\n", (unsigned long)(all_end - all_start));
+
+    return SUCCESS;
+}
+DEFINE_TEST(IOURING0001, "Test basic io", test_io, true)
 
 static int
 test_iouring(env_t env)
@@ -385,7 +445,7 @@ test_iouring(env_t env)
     wait_for_helper(&user_thread);
     return SUCCESS;
 }
-DEFINE_TEST(IOURING0001, "Test basic io uring", test_iouring, true)
+DEFINE_TEST(IOURING0002, "Test basic io uring", test_iouring, true)
 
 static int
 test_iouring_uintr(env_t env)
@@ -517,4 +577,4 @@ test_iouring_uintr(env_t env)
     seL4_uintr_unregister_sender(index, 0);
     return SUCCESS;
 }
-DEFINE_TEST(IOURING0002, "Test basic io uring with uintr", test_iouring_uintr, true)
+DEFINE_TEST(IOURING0003, "Test basic io uring with uintr", test_iouring_uintr, true)
