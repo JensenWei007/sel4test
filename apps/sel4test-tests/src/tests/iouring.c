@@ -333,9 +333,10 @@ test_io(env_t env)
     uint64_t all_start = get_cycle_count();
     sqt_add_sq(env, &cookie);
     while(!sqt_get_cq(env, cookies_vaddr, 4096 / 8)) {};
+    uint64_t all_mid = get_cycle_count();
     compute(COMP_SIZE);
     uint64_t all_end = get_cycle_count();
-    printf("== ALL cycles: %lu ==\n", (unsigned long)(all_end - all_start));
+    printf("== ALL mid cycles: %lu , 2 cycles: %lu ==\n", (unsigned long)(all_mid - all_start), (unsigned long)(all_end - all_mid));
 
     return SUCCESS;
 }
