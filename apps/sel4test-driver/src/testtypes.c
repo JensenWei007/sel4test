@@ -136,6 +136,9 @@ static void handle_timer_requests(driver_env_t env, sel4test_output_t test_outpu
 
 }
 
+#define BUFFER_COUNT 100
+#define BUFFER_SIZE 4096
+
 /* This function waits on:
  * Timer interrupts (from hardware)
  * Requests from tests (sel4driver acts as a server)
@@ -151,6 +154,18 @@ static int sel4test_driver_wait(driver_env_t env, struct testcase *test)
 
     sel4rpc_server_init(&rpc_server, &env->vka, sel4rpc_default_handler, env,
                         &env->reply, &env->simple);
+
+    memset(arp_packet + 42, 0, 4054);
+    uintptr_t phys[BUFFER_COUNT] = {0};
+    unsigned int si[BUFFER_COUNT] = {BUFFER_SIZE};
+    uint8_t* send_buf[BUFFER_COUNT] = {0};
+
+    for (int i = 0; i < BUFFER_COUNT; i++) {
+        send_buf[i] = (uint8_t*)ps_dma_alloc(&env->init->net_ops.dma_manager, BUFFER_SIZE, BUFFER_SIZE, 1, PS_MEM_NORMAL);
+        phys[i] = ps_dma_pin(&env->init->net_ops.dma_manager, send_buf[i], BUFFER_SIZE);
+        si[i] = BUFFER_SIZE;
+        memcpy(send_buf[i], arp_packet, BUFFER_SIZE);
+    }
 
     while (1) {
         /* wait for tests to finish or fault, receive test request or report result */
@@ -198,19 +213,8 @@ static int sel4test_driver_wait(driver_env_t env, struct testcase *test)
             if (rpcMsg.which_msg != RpcMessage_net_tag)
                 sel4rpc_server_recv(&rpc_server);
             if (rpcMsg.msg.net.op == 0) {
-                memset(arp_packet + 42, 0, 4054);
-                uintptr_t phys[2] = {0, 0};
-                uint8_t* send1 = (uint8_t*)ps_dma_alloc(&env->init->net_ops.dma_manager, 4096, 4096, 1, PS_MEM_NORMAL);
-                phys[0] = ps_dma_pin(&env->init->net_ops.dma_manager, send1, 4096);
-                uint8_t* send2 = (uint8_t*)ps_dma_alloc(&env->init->net_ops.dma_manager, 4096, 4096, 1, PS_MEM_NORMAL);
-                phys[1] = ps_dma_pin(&env->init->net_ops.dma_manager, send2, 4096);
-                unsigned int si[2] = {4096, 4096};
                 int coo = 2002;
-                printf("virt: %lx, phys0 : %lx, phys1: %lx\n", (unsigned long)send1 ,(unsigned long)phys[0], (unsigned long)phys[1]);
-                //memset(send, 0, 4096);
-                memcpy(send1, arp_packet, 4096);
-                memcpy(send2, arp_packet, 4096);
-                env->init->eth_driver->i_fn.raw_tx(env->init->eth_driver, 2, phys, si, (void *)(&coo));
+                    env->init->eth_driver->i_fn.raw_tx(env->init->eth_driver, BUFFER_COUNT, phys, si, (void *)(&coo));
             } else if (rpcMsg.msg.net.op == 1) {
                 env->init->eth_driver->i_fn.raw_poll(env->init->eth_driver);
             }

@@ -94,7 +94,7 @@ static void txc(void *cb_cookie, void *cookie)
             break;
         }
     }
-    printf("cookie is down : %i\n", *c);
+    //printf("cookie is down : %i\n", *c);
 }
 
 static struct raw_iface_callbacks icb_fns = {

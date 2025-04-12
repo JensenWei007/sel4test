@@ -16,8 +16,8 @@
 
 #include </usr/include/clang/14/include/x86gprintrin.h>
 
-#define COMP 7*100000
-#define COMP_SIZE 100
+#define COMP 100000
+#define COMP_SIZE 50
 
 struct io_uring_sqe {
 	uint8_t	opcode;
@@ -88,6 +88,8 @@ typedef struct io_uring_state io_uring_state_t;
 
 uint64_t state_addr_uintr;
 uint64_t io_isdown;
+uint64_t uintr_io_end;
+uint64_t uintr_io_mid;
 
 #define FASTFN inline __attribute__((always_inline))
 
@@ -253,34 +255,51 @@ static int sqt_add_cq(io_uring_state_t* state, uint64_t cookie)
 static int user_thread_func(uint64_t state_addr)
 {
     io_uring_state_t* state = (io_uring_state_t*)state_addr;
+    uint64_t n_com_start;
+    uint64_t n_com_end;
+    uint64_t com_times = 0;
 
+    uint64_t n_io_start = get_cycle_count();
     if (!user_add_sq(state))
         return FAILURE;
     
     // do multiple
     uint64_t cookie = 0;
-    while(!user_get_cq(state, &cookie)) {
+    do {
+        n_com_start = get_cycle_count();
         compute(COMP_SIZE);
-    };
+        n_com_end = get_cycle_count();
+        com_times++;
+    } while(!user_get_cq(state, &cookie));
+    uint64_t n_io_end = get_cycle_count();
+
+    printf("=== IO & ALL: %lu ===\n", (unsigned long)(n_io_end - n_io_start));
+    printf("=== COM: %lu, times: %i ===\n", (unsigned long)(n_com_end - n_com_start), (int)com_times);
 
     return SUCCESS;
 }
 
 static void __attribute__((interrupt)) uintr_handler(struct __uintr_frame *ui_frame, unsigned long long vector)
 {
-    printf("========== UINTR HANDLER START ==========\n");
     io_uring_state_t* state = (io_uring_state_t*)state_addr_uintr;
     uint64_t cookie = 0;
     if(!user_get_cq(state, &cookie))
         printf("== Error, uintr hasnot cq ==\n");
     io_isdown = 1;
-    printf("=========== UINTR HANDLER END ===========\n");
+    uint32_t lo, hi;
+    asm volatile("lfence");
+    asm volatile(
+        "rdtsc"
+        : "=a"(lo), "=d"(hi));
+    asm volatile("lfence");
+    uintr_io_end = ((uint64_t)hi << 32ull) | (uint64_t)lo;
 }
 
 static int user_thread_func_uintr(uint64_t state_addr)
 {
     state_addr_uintr = state_addr;
     io_isdown = 0;
+    uintr_io_end = 0;
     io_uring_state_t* state = (io_uring_state_t*)state_addr;
 
     uint64_t addr[2] = {state->uintr_upid_paddr, state->uintr_upid_vaddr};
@@ -289,18 +308,26 @@ static int user_thread_func_uintr(uint64_t state_addr)
     state->uintr_fd[0] = seL4_uintr_vector_fd(0, 0);
     state->uintr_fd_valid[0] = 1;
 
+    uint64_t com_times = 0;
+
 	_stui();
 
+    uint64_t uintr_io_start = get_cycle_count();
     if (!user_add_sq(state))
         return FAILURE;
 
     // do multiple
-    while(!io_isdown) {
+    do {
         compute(COMP_SIZE);
-    };
+        com_times++;
+    } while(!io_isdown);
+    uint64_t uintr_all_end = get_cycle_count();
 
     seL4_uintr_unregister_handler(0);
     _clui();
+
+    printf("=== IO: %lu ===\n", (unsigned long)(uintr_io_end - uintr_io_start));
+    printf("=== ALL: %lu ===\n", (unsigned long)(uintr_all_end - uintr_io_start));
 
     return SUCCESS;
 }
@@ -336,7 +363,7 @@ test_io(env_t env)
     uint64_t all_mid = get_cycle_count();
     compute(COMP_SIZE);
     uint64_t all_end = get_cycle_count();
-    printf("== ALL mid cycles: %lu , 2 cycles: %lu ==\n", (unsigned long)(all_mid - all_start), (unsigned long)(all_end - all_mid));
+    printf("== ALL IO cycles: %lu , Com cycles: %lu ==\n", (unsigned long)(all_mid - all_start), (unsigned long)(all_end - all_mid));
 
     return SUCCESS;
 }
@@ -413,6 +440,13 @@ test_iouring(env_t env)
     if (vspace_map_pages_at_vaddr(&env->vspace, &env->cookies_v, &cookie, (void *)cookies_vaddr, 1, 12, reserve))
         return false;
     cookies = (uint64_t*)cookies_vaddr;
+
+    // Warm up ipc
+    uint64_t io_start = get_cycle_count();
+    sqt_add_sq(env, &cookie);
+    while(!sqt_get_cq(env, cookies_vaddr, 4096 / 8)) {};
+    uint64_t io_end = get_cycle_count();
+    printf("== WARMUP IO cycles: %lu ==\n", (unsigned long)(io_end - io_start));
 
     // Start user_thread
     //printf("================cores : %i, user: %lx\n", (int)env->cores, (unsigned long)state->state_user);
@@ -537,6 +571,13 @@ test_iouring_uintr(env_t env)
     if (!map_frame(env, frame_upid, &(state->uintr_upid_vaddr), &user_thread)) {
         return FAILURE;
     }
+
+    // Warm up IPC
+    uint64_t io_start = get_cycle_count();
+    sqt_add_sq(env, &cookie);
+    while(!sqt_get_cq(env, cookies_vaddr, 4096 / 8)) {};
+    uint64_t io_end = get_cycle_count();
+    printf("== WARMUP IO cycles: %lu ==\n", (unsigned long)(io_end - io_start));
 
     // Start user_thread
     //printf("================cores : %i, user: %lx\n", (int)env->cores, (unsigned long)state->state_user);
