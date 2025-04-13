@@ -322,16 +322,10 @@ static int uintr_pong_fn(uint64_t space_addr)
 static int
 test_pingpong_smp_uintr(env_t env)
 {
-    // We will have at least 3 cores, this process is core 0
-    // and core 1 , core 2 will do ping-pong
-    //seL4_TCB_SetAffinity(env->tcb, 0);
-
     // Create process
     helper_thread_t ping, pong;
     create_helper_process(env, &ping);
     set_helper_affinity(env, &ping, 1);
-    create_helper_process(env, &pong);
-    set_helper_affinity(env, &pong, 2);
 
     // Create and map SpacePing
     seL4_CPtr space_ping = vka_alloc_frame_leaky(&env->vka, 12);
@@ -352,33 +346,26 @@ test_pingpong_smp_uintr(env_t env)
     uintptr_t cookie3 = 0;
     reservation_t reserve3 = vspace_reserve_range_aligned(&env->vspace, 2 * BIT(12), 12, seL4_AllRights, 1, &vaddr_space_pong);
     int err3 = vspace_map_pages_at_vaddr(&env->vspace, &space_pong, &cookie3, (void *)vaddr_space_pong, 1, 12, reserve3);
-    seL4_CPtr space_pong_2 = get_free_slot(env);
-    cnode_copy(env, space_pong, space_pong_2, seL4_AllRights);
-    void *vaddr_space_pong2;
-    uintptr_t cookie4 = 0;
-    reservation_t reserve4 = vspace_reserve_range_aligned(&pong.process.vspace, 2 * BIT(12), 12, seL4_AllRights, 1, &vaddr_space_pong2);
-    int err4 = vspace_map_pages_at_vaddr(&pong.process.vspace, &space_pong_2, &cookie4, (void *)vaddr_space_pong2, 1, 12, reserve4);
 
     // Create ep to ipc
     seL4_CPtr ep = vka_alloc_endpoint_leaky(&env->vka);
     cspacepath_t path;
     vka_cspace_make_path(&env->vka, ep, &path);
     seL4_CPtr ping_ep = sel4utils_copy_path_to_process(&ping.process, path);
-    seL4_CPtr pong_ep = sel4utils_copy_path_to_process(&pong.process, path);
 
     // Reset ThreadSpace
     ThreadSpace_t* t1 = (ThreadSpace_t*)vaddr_space_ping;
     ThreadSpace_t* t2 = (ThreadSpace_t*)vaddr_space_pong;
     ThreadSpaceReset(t1, ping_ep);
-    ThreadSpaceReset(t2, pong_ep);
+    ThreadSpaceReset(t2, ep);
 
     // Create and map UPID
     seL4_CPtr frame_upid = vka_alloc_frame_leaky(&env->vka, 12);
     seL4_ARCH_Page_GetAddress_t r1 = seL4_X86_Page_GetAddress(frame_upid);
     void *vaddr_upid;
     uintptr_t cookie11 = 0;
-    reservation_t reserve11 = vspace_reserve_range_aligned(&pong.process.vspace, 2 * BIT(12), 12, seL4_AllRights, 1, &vaddr_upid);
-    int err11 = vspace_map_pages_at_vaddr(&pong.process.vspace, &frame_upid, &cookie11, (void *)vaddr_upid, 1, 12, reserve11);
+    reservation_t reserve11 = vspace_reserve_range_aligned(&env->vspace, 2 * BIT(12), 12, seL4_AllRights, 1, &vaddr_upid);
+    int err11 = vspace_map_pages_at_vaddr(&env->vspace, &frame_upid, &cookie11, (void *)vaddr_upid, 1, 12, reserve11);
     t2->recv_addr1 = r1.paddr;
     t2->recv_addr2 = (uint64_t)vaddr_upid;
 
@@ -403,23 +390,35 @@ test_pingpong_smp_uintr(env_t env)
 
     // Start ping-pong
     start_helper(env, &ping, uintr_ping_fn, (uint64_t)vaddr_space_ping2, 0, 0, 0);
-    start_helper(env, &pong, uintr_pong_fn, (uint64_t)vaddr_space_pong2, 0, 0, 0);
+
+    uint64_t addr1[2] = {t2->recv_addr1, t2->recv_addr2};
+    seL4_uintr_register_handler((uint64_t)uintr_handler, 0, addr1);
+    t2->fd = seL4_uintr_vector_fd(0, 0);
+
+    _stui();
+    uintr_end = 0;
 
     // Wait for fd
-    while (t2->wait_for_pingpong == 2) {};
     t1->fd = t2->fd;
     t1->wait_for_pingpong -= 1;
 
     // Wait ping-pong is sync
     while (t1->wait_for_pingpong == 1) {};
     t1->wait_for_pingpong -= 1;
-    t2->wait_for_pingpong -= 1;
-    
 
+    while (uintr_end == 0) {};
+    t2->timestamp = uintr_end;
+    
     // Wait ping-pong is done
-    while(!t1->is_done || !t2->is_done) {};
+    while(!t1->is_done) {};
+
+    seL4_uintr_unregister_handler(0);
+    _clui();
 
     printf("Uintr cycles is %lu\n", (unsigned long)t2->timestamp - t1->timestamp);
+
+    wait_for_helper(&ping);
+    cleanup_helper(env, &ping);
 
     return SUCCESS;
 }
