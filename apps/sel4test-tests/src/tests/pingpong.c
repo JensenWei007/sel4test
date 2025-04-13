@@ -89,23 +89,6 @@ static void ThreadSpaceReset(ThreadSpace_t* t, seL4_CPtr ep)
 #endif
 }
 
-static int slow_ping_fn(uint64_t space_addr)
-{
-    ThreadSpace_t* space = (ThreadSpace_t*)space_addr;
-    seL4_MessageInfo_t info = seL4_MessageInfo_new(0, 0, 0, 0);
-    seL4_CPtr ep = space->ep;
-
-    // Wait sync
-    space->wait_for_pingpong -=1;
-    while (space->wait_for_pingpong) {};
-
-    space->timestamp = get_cycle_count();
-    seL4_Send(ep, info);
-
-    space->is_done = 1;
-    return SUCCESS;
-}
-
 static int slow_pong_fn(uint64_t space_addr)
 {
     ThreadSpace_t* space = (ThreadSpace_t*)space_addr;
@@ -126,16 +109,10 @@ static int slow_pong_fn(uint64_t space_addr)
 static int
 test_pingpong_smp_slowpath(env_t env)
 {
-    // We will have at least 3 cores, this process is core 0
-    // and core 1 , core 2 will do ping-pong
-    seL4_TCB_SetAffinity(env->tcb, 0);
-
     // Create process
-    helper_thread_t ping, pong;
-    create_helper_process(env, &ping);
-    set_helper_affinity(env, &ping, 1);
+    helper_thread_t pong;
     create_helper_process(env, &pong);
-    set_helper_affinity(env, &pong, 2);
+    set_helper_affinity(env, &pong, 1);
 
     // Create and map SpacePing
     seL4_CPtr space_ping = vka_alloc_frame_leaky(&env->vka, 12);
@@ -143,12 +120,6 @@ test_pingpong_smp_slowpath(env_t env)
     uintptr_t cookie1 = 0;
     reservation_t reserve1 = vspace_reserve_range_aligned(&env->vspace, 2 * BIT(12), 12, seL4_AllRights, 1, &vaddr_space_ping);
     int err1 = vspace_map_pages_at_vaddr(&env->vspace, &space_ping, &cookie1, (void *)vaddr_space_ping, 1, 12, reserve1);
-    seL4_CPtr space_ping_2 = get_free_slot(env);
-    cnode_copy(env, space_ping, space_ping_2, seL4_AllRights);
-    void *vaddr_space_ping2;
-    uintptr_t cookie2 = 0;
-    reservation_t reserve2 = vspace_reserve_range_aligned(&ping.process.vspace, 2 * BIT(12), 12, seL4_AllRights, 1, &vaddr_space_ping2);
-    int err2 = vspace_map_pages_at_vaddr(&ping.process.vspace, &space_ping_2, &cookie2, (void *)vaddr_space_ping2, 1, 12, reserve2);
 
     // Create and map SpacePong
     seL4_CPtr space_pong = vka_alloc_frame_leaky(&env->vka, 12);
@@ -167,29 +138,34 @@ test_pingpong_smp_slowpath(env_t env)
     seL4_CPtr ep = vka_alloc_endpoint_leaky(&env->vka);
     cspacepath_t path;
     vka_cspace_make_path(&env->vka, ep, &path);
-    seL4_CPtr ping_ep = sel4utils_copy_path_to_process(&ping.process, path);
     seL4_CPtr pong_ep = sel4utils_copy_path_to_process(&pong.process, path);
 
     // Reset ThreadSpace
     ThreadSpace_t* t1 = (ThreadSpace_t*)vaddr_space_ping;
     ThreadSpace_t* t2 = (ThreadSpace_t*)vaddr_space_pong;
-    ThreadSpaceReset(t1, ping_ep);
+    ThreadSpaceReset(t1, ep);
     ThreadSpaceReset(t2, pong_ep);
 
     // Start ping-pong
-    start_helper(env, &ping, slow_ping_fn, (uint64_t)vaddr_space_ping2, 0, 0, 0);
     start_helper(env, &pong, slow_pong_fn, (uint64_t)vaddr_space_pong2, 0, 0, 0);
 
+    seL4_MessageInfo_t info = seL4_MessageInfo_new(0, 0, 0, 0);
+
     // Wait ping-pong is sync
-    while (t1->wait_for_pingpong == 2) {};
     while (t2->wait_for_pingpong == 2) {};
+
+    t1->timestamp = get_cycle_count();
     t2->wait_for_pingpong -= 1;
-    t1->wait_for_pingpong -= 1;
+
+    seL4_Send(ep, info);
 
     // Wait ping-pong is done
-    while(!t1->is_done || !t2->is_done) {};
+    while(!t2->is_done) {};
 
     printf("Slowpath cycles is %lu\n", (unsigned long)t2->timestamp - t1->timestamp);
+
+    wait_for_helper(&pong);
+    cleanup_helper(env, &pong);
 
     return SUCCESS;
 }
@@ -235,16 +211,10 @@ static int fast_pong_fn(uint64_t space_addr)
 static int
 test_pingpong_smp_fastpath(env_t env)
 {
-    // We will have at least 3 cores, this process is core 0
-    // and core 1 , core 2 will do ping-pong
-    seL4_TCB_SetAffinity(env->tcb, 0);
-
     // Create process
-    helper_thread_t ping, pong;
-    create_helper_process(env, &ping);
-    set_helper_affinity(env, &ping, 1);
+    helper_thread_t pong;
     create_helper_process(env, &pong);
-    set_helper_affinity(env, &pong, 2);
+    set_helper_affinity(env, &pong, 1);
 
     // Create and map SpacePing
     seL4_CPtr space_ping = vka_alloc_frame_leaky(&env->vka, 12);
@@ -252,12 +222,6 @@ test_pingpong_smp_fastpath(env_t env)
     uintptr_t cookie1 = 0;
     reservation_t reserve1 = vspace_reserve_range_aligned(&env->vspace, 2 * BIT(12), 12, seL4_AllRights, 1, &vaddr_space_ping);
     int err1 = vspace_map_pages_at_vaddr(&env->vspace, &space_ping, &cookie1, (void *)vaddr_space_ping, 1, 12, reserve1);
-    seL4_CPtr space_ping_2 = get_free_slot(env);
-    cnode_copy(env, space_ping, space_ping_2, seL4_AllRights);
-    void *vaddr_space_ping2;
-    uintptr_t cookie2 = 0;
-    reservation_t reserve2 = vspace_reserve_range_aligned(&ping.process.vspace, 2 * BIT(12), 12, seL4_AllRights, 1, &vaddr_space_ping2);
-    int err2 = vspace_map_pages_at_vaddr(&ping.process.vspace, &space_ping_2, &cookie2, (void *)vaddr_space_ping2, 1, 12, reserve2);
 
     // Create and map SpacePong
     seL4_CPtr space_pong = vka_alloc_frame_leaky(&env->vka, 12);
@@ -276,29 +240,34 @@ test_pingpong_smp_fastpath(env_t env)
     seL4_CPtr ep = vka_alloc_endpoint_leaky(&env->vka);
     cspacepath_t path;
     vka_cspace_make_path(&env->vka, ep, &path);
-    seL4_CPtr ping_ep = sel4utils_copy_path_to_process(&ping.process, path);
     seL4_CPtr pong_ep = sel4utils_copy_path_to_process(&pong.process, path);
 
     // Reset ThreadSpace
     ThreadSpace_t* t1 = (ThreadSpace_t*)vaddr_space_ping;
     ThreadSpace_t* t2 = (ThreadSpace_t*)vaddr_space_pong;
-    ThreadSpaceReset(t1, ping_ep);
+    ThreadSpaceReset(t1, ep);
     ThreadSpaceReset(t2, pong_ep);
 
     // Start ping-pong
-    start_helper(env, &ping, fast_ping_fn, (uint64_t)vaddr_space_ping2, 0, 0, 0);
     start_helper(env, &pong, fast_pong_fn, (uint64_t)vaddr_space_pong2, 0, 0, 0);
 
+    seL4_MessageInfo_t info = seL4_MessageInfo_new(0, 0, 0, 1);
+
     // Wait ping-pong is sync
-    while (t1->wait_for_pingpong == 2) {};
     while (t2->wait_for_pingpong == 2) {};
+
+    t1->timestamp = get_cycle_count();
     t2->wait_for_pingpong -= 1;
-    t1->wait_for_pingpong -= 1;
+
+    seL4_Call(ep, info);
 
     // Wait ping-pong is done
-    while(!t1->is_done || !t2->is_done) {};
+    while(!t2->is_done) {};
 
     printf("Fastpath cycles is %lu\n", (unsigned long)t2->timestamp - t1->timestamp);
+
+    wait_for_helper(&pong);
+    cleanup_helper(env, &pong);
 
     return SUCCESS;
 }
@@ -355,7 +324,7 @@ test_pingpong_smp_uintr(env_t env)
 {
     // We will have at least 3 cores, this process is core 0
     // and core 1 , core 2 will do ping-pong
-    seL4_TCB_SetAffinity(env->tcb, 0);
+    //seL4_TCB_SetAffinity(env->tcb, 0);
 
     // Create process
     helper_thread_t ping, pong;

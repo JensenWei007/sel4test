@@ -346,16 +346,12 @@ test_io(env_t env)
         return false;
     cookies = (uint64_t*)cookies_vaddr;
 
-    uint64_t compute_start = get_cycle_count();
-    compute(COMP_SIZE);
-    uint64_t compute_end = get_cycle_count();
-    printf("== Compute cycles: %lu ==\n", (unsigned long)(compute_end - compute_start));
-    
+    // Warm up IPC
     uint64_t io_start = get_cycle_count();
     sqt_add_sq(env, &cookie);
     while(!sqt_get_cq(env, cookies_vaddr, 4096 / 8)) {};
     uint64_t io_end = get_cycle_count();
-    printf("== IO cycles: %lu ==\n", (unsigned long)(io_end - io_start));
+    printf("== WARMUP IO cycles: %lu ==\n", (unsigned long)(io_end - io_start));
 
     uint64_t all_start = get_cycle_count();
     sqt_add_sq(env, &cookie);
