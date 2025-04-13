@@ -324,7 +324,7 @@ test_pingpong_smp_uintr(env_t env)
 {
     // We will have at least 3 cores, this process is core 0
     // and core 1 , core 2 will do ping-pong
-    //seL4_TCB_SetAffinity(env->tcb, 0);
+    seL4_TCB_SetAffinity(env->tcb, 0);
 
     // Create process
     helper_thread_t ping, pong;
@@ -421,7 +421,21 @@ test_pingpong_smp_uintr(env_t env)
 
     printf("Uintr cycles is %lu\n", (unsigned long)t2->timestamp - t1->timestamp);
 
+    wait_for_helper(&pong);
+    cleanup_helper(env, &pong);
+    wait_for_helper(&ping);
+    cleanup_helper(env, &ping);
+
     return SUCCESS;
 }
-DEFINE_TEST(PINGPONG0003, "Test basic pingpong for uintr", test_pingpong_smp_uintr, config_set(CONFIG_X86_64_UINTR) && CONFIG_MAX_NUM_NODES > 2)
+
+static int
+test_uintr(env_t env)
+{
+    int tests = 1;
+    for (int i = 0; i < tests; i++)
+        test_pingpong_smp_uintr(env);
+    return SUCCESS;
+}
+DEFINE_TEST(PINGPONG0003, "Test basic pingpong for uintr", test_uintr, config_set(CONFIG_X86_64_UINTR) && CONFIG_MAX_NUM_NODES > 2)
 #endif
